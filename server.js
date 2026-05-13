@@ -25,12 +25,12 @@ function proxyToAPI(body, res) {
   delete parsed.provider;
   const payload = JSON.stringify(parsed);
 
-  console.log('Proxying to text.pollinations.ai model=' + parsed.model);
+  console.log('Proxying to gen.pollinations.ai model=' + parsed.model);
 
   const options = {
-    hostname: 'text.pollinations.ai',
+    hostname: 'gen.pollinations.ai',
     port: 443,
-    path: '/openai',
+    path: '/v1/chat/completions',
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -133,5 +133,5 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log('SteamVault at http://localhost:' + PORT);
-  console.log('AI proxy at /api/chat -> text.pollinations.ai');
+  console.log('AI proxy at /api/chat -> gen.pollinations.ai');
 });

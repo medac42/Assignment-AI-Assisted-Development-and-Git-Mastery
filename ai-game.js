@@ -26,8 +26,8 @@ async function playGame(idx) {
   document.getElementById('play-loading-model').textContent = '';
   document.getElementById('play-iframe').srcdoc = '';
 
-  // 1. Pollinations.ai — 100% free, no key, CORS enabled
-  var pollinModels = ['openai', 'mistral', 'llama', 'deepseek'];
+  // 1. Pollinations.ai (gen.pollinations.ai) — free, no key
+  var pollinModels = ['qwen-coder', 'deepseek', 'gemini', 'openai', 'mistral'];
   for (var p = 0; p < pollinModels.length; p++) {
     document.getElementById('play-loading-model').textContent = pollinModels[p] + ' (Pollinations)';
     document.getElementById('play-loading-sub').textContent = 'Generating with ' + pollinModels[p] + '...';
@@ -72,7 +72,7 @@ async function callPollinations(prompt, model) {
     seed: Math.floor(Math.random() * 100000)
   };
 
-  var res = await fetch('https://text.pollinations.ai/openai', {
+  var res = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
