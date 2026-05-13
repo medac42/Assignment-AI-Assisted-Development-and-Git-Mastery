@@ -39,52 +39,34 @@ async function playGame(idx) {
   var prompt = buildFullPrompt(game.name, gameInfo);
   var system = 'You make fun 2D HTML5 canvas games. Output ONLY the HTML code. No markdown, no explanation.';
 
-  // Try Groq (ultra-fast LPU, best models first)
-  var groqModels = ['meta-llama/llama-4-scout-17b-16e-instruct', 'qwen-qwq-32b', 'deepseek-r1-distill-llama-70b', 'llama-3.3-70b-versatile'];
-  for (var g = 0; g < groqModels.length; g++) {
-    var gName = groqModels[g].split('/').pop().split('-').slice(0,3).join('-');
-    updateLoading('Groq: ' + gName, 'Generating...');
+  // 1. Try heaviest models first (quality over speed)
+  var models = [
+    { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B', api: 'openrouter' },
+    { id: 'inclusionai/ring-2.6-1t:free', name: 'Ring 1T', api: 'openrouter' },
+    { id: 'nvidia/nemotron-3-super:free', name: 'Nemotron 120B', api: 'openrouter' },
+    { id: 'poolside/laguna-m.1:free', name: 'Laguna M.1', api: 'openrouter' }
+  ];
+
+  for (var m = 0; m < models.length; m++) {
+    updateLoading(models[m].name, 'Generating...');
     try {
-      html = await callGroqWithTimeout(system, prompt, groqModels[g], 30000);
-      if (html && html.length > 500 && html.indexOf('<') >= 0) {
-        console.log('Groq ' + gName + ' success! (' + html.length + ' chars)');
+      html = await callAIWithTimeout(system, prompt, models[m].id, 120000);
+      if (html && html.length > 800 && html.indexOf('<canvas') >= 0) {
+        console.log(models[m].name + ' success! (' + html.length + ' chars)');
         break;
       }
+      console.warn(models[m].name + ': no valid canvas game');
       html = null;
     } catch (e) {
-      console.warn('Groq ' + gName + ':', e.message);
+      console.warn(models[m].name + ':', e.message);
       html = null;
-    }
-  }
-
-  // Fallback: OpenRouter (heaviest models)
-  if (!html) {
-    var models = [
-      { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B' },
-      { id: 'inclusionai/ring-2.6-1t:free', name: 'Ring 1T' },
-      { id: 'poolside/laguna-m.1:free', name: 'Laguna M.1' }
-    ];
-
-    for (var m = 0; m < models.length; m++) {
-      updateLoading(models[m].name, 'Generating...');
-      try {
-        html = await callAIWithTimeout(system, prompt, models[m].id, 90000);
-        if (html && html.length > 500 && html.indexOf('<') >= 0) {
-          console.log(models[m].name + ' success! (' + html.length + ' chars)');
-          break;
-        }
-        html = null;
-      } catch (e) {
-        console.warn(models[m].name + ':', e.message);
-        html = null;
-      }
     }
   }
 
   document.getElementById('play-loading').style.display = 'none';
   iframe.removeAttribute('src');
   iframe.sandbox = 'allow-scripts';
-  var valid = html && html.length > 500 && html.indexOf('<') >= 0;
+  var valid = html && html.length > 800 && html.indexOf('<') >= 0;
   iframe.srcdoc = valid ? cleanHTML(html) : themedFallbackGame(game.name);
 }
 
