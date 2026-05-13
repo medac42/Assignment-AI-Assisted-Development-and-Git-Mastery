@@ -21,8 +21,14 @@ async function playGame(idx) {
   }
 
   var html = null;
+  var prompt = buildFullPrompt(game.name, gameInfo);
+  var system = 'You are an expert HTML5 game developer who knows every Steam game. ' +
+    'You create 2D canvas mini-games that are simplified mini-versions of real games. ' +
+    'The mini-game MUST capture the CORE GAMEPLAY LOOP of the original. ' +
+    'USE REAL ELEMENTS: real character names, enemy names, item names, weapon names from the game. ' +
+    'Output ONLY a complete HTML file. No markdown, no explanation, no code fences.';
 
-  // Try OpenRouter free models (ordered by programming capability)
+  // Try models (one call each, with 90s timeout)
   var models = [
     { id: 'nvidia/nemotron-3-super:free', name: 'Nemotron 120B' },
     { id: 'inclusionai/ring-2.6-1t:free', name: 'Ring 1T' },
@@ -33,26 +39,18 @@ async function playGame(idx) {
   ];
 
   for (var m = 0; m < models.length; m++) {
+    updateLoading(models[m].name, 'Generating...');
     try {
-      updateLoading(models[m].name, 'Starting multi-step generation...');
-      html = await generateGameMultiStep(game.name, gameInfo, models[m].id, models[m].name);
-      if (html && html.length > 500 && html.indexOf('<') >= 0) break;
+      html = await callAIWithTimeout(system, prompt, models[m].id, 90000);
+      if (html && html.length > 500 && html.indexOf('<') >= 0) {
+        console.log(models[m].name + ' success! (' + html.length + ' chars)');
+        break;
+      }
+      console.warn(models[m].name + ': response too short or invalid');
       html = null;
     } catch (e) {
-      console.warn(models[m].name + ' failed:', e.message);
+      console.warn(models[m].name + ':', e.message);
       html = null;
-    }
-  }
-
-  // Last resort: Cohere single-shot
-  if (!html || html.length < 500) {
-    try {
-      updateLoading('Cohere', 'Trying Cohere fallback...');
-      var msgs = [{ role: 'user', content: buildFullPrompt(game.name, gameInfo) }];
-      var sys = 'You are an expert HTML5 game developer. Output ONLY code. No markdown.';
-      html = await callCohereFallback(sys, msgs);
-    } catch (e) {
-      console.warn('Cohere fallback failed:', e.message);
     }
   }
 
@@ -61,80 +59,32 @@ async function playGame(idx) {
   document.getElementById('play-iframe').srcdoc = valid ? cleanHTML(html) : themedFallbackGame(game.name);
 }
 
-// Build context string from Steam API data
+// Build context from Steam data
 function buildGameContext(name, info) {
   if (!info) return 'the Steam game "' + name + '"';
   var ctx = '"' + name + '"';
   if (info.short_description) ctx += '. Description: ' + info.short_description;
   if (info.genres) ctx += '. Genres: ' + info.genres;
   if (info.categories) ctx += '. Features: ' + info.categories;
-  if (info.developers) ctx += '. By: ' + info.developers;
   return ctx;
 }
 
-// ── Multi-step game generation with Cohere ──
-async function generateGameMultiStep(name, gameInfo, modelId, modelName) {
-  var messages = [];
+function buildFullPrompt(name, gameInfo) {
   var ctx = buildGameContext(name, gameInfo);
-  var system = 'You are an expert HTML5 game developer. You know every Steam game in detail. ' +
-    'You create 2D canvas mini-games that are simplified versions of real games. ' +
-    'The mini-game must capture the CORE GAMEPLAY LOOP of the original. ' +
-    'You write self-contained HTML files with embedded CSS and JS. Output ONLY code, no markdown fences, no explanation. ' +
-    'When asked to update code, output the COMPLETE updated HTML file.';
-
-  // Step 1: Core gameplay based on real game info
-  updateLoading(modelName + ' 1/3', 'Designing game concept...');
-  messages.push({
-    role: 'user',
-    content: 'Create a complete HTML file for a 2D canvas mini-game that is a simplified version of ' + ctx + '. ' +
-      'The mini-game should capture the CORE GAMEPLAY of the original. ' +
-      'USE REAL ELEMENTS FROM THE GAME: real character names, real enemy names, real item names, real weapon names, real location names. ' +
-      'Draw characters and enemies as simple but recognizable shapes with their names shown. ' +
-      'For example: if it is a farming sim, include planting/harvesting crops from the game. If FPS, include weapons from the game. ' +
-      'If puzzle, include the puzzle mechanic. If racing, include cars/tracks. If platformer, include the game\'s enemies. ' +
-      'If RPG, include the game\'s classes/spells. If sports, simulate that sport with real team mechanics. ' +
-      'Canvas fills the viewport. Use appropriate keyboard/mouse controls for the genre. ' +
-      'Use a color palette and visual style that matches the original game. ' +
-      'Start with <!DOCTYPE html>. Make it fun and playable immediately.'
-  });
-
-  var step1 = await callAI(system, messages, modelId);
-  if (!step1 || step1.length < 200) return null;
-  messages.push({ role: 'assistant', content: step1 });
-
-  // Step 2: Add depth, challenge, scoring
-  updateLoading(modelName + ' 2/3', 'Adding challenge & depth...');
-  messages.push({
-    role: 'user',
-    content: 'Update the game. Add these features to the EXISTING code:\n' +
-      '1. Progressive difficulty: the game gets harder over time or levels\n' +
-      '2. A scoring system that fits the game genre\n' +
-      '3. Visual feedback: particle effects, screen shake, animations on key events\n' +
-      '4. At least 3 different types of challenges/obstacles appropriate to the genre of ' + name + '\n' +
-      '5. Collectibles or power-ups that make sense for this type of game\n' +
-      '6. Sound effects using Web Audio API (short beeps/tones)\n' +
-      'Output the COMPLETE updated HTML file.'
-  });
-
-  var step2 = await callAI(system, messages, modelId);
-  if (!step2 || step2.length < 500) return step1;
-  messages.push({ role: 'assistant', content: step2 });
-
-  // Step 3: Title screen, HUD, game over, polish
-  updateLoading(modelName + ' 3/3', 'Polishing UI...');
-  messages.push({
-    role: 'user',
-    content: 'Final update. Add these to the EXISTING code:\n' +
-      '1. Title screen: show "' + name + '" in stylized large text with the game\'s theme colors, plus "Press ENTER to start"\n' +
-      '2. HUD overlay showing score, level/wave, and any relevant stats for this genre\n' +
-      '3. Game Over screen when the player loses: show final score + "Press ENTER to restart"\n' +
-      '4. Smooth transitions between screens\n' +
-      '5. A brief instructions text on the title screen showing the controls\n' +
-      'Output the COMPLETE final HTML file.'
-  });
-
-  var step3 = await callAI(system, messages, modelId);
-  return (step3 && step3.length > 500) ? step3 : step2;
+  return 'Create a COMPLETE, PLAYABLE HTML file with a 2D canvas mini-game that is a simplified version of ' + ctx + '.\n\n' +
+    'REQUIREMENTS:\n' +
+    '- Match the GENRE of the real game: if puzzle make puzzle, if racing make racing, if FPS make shooter, etc.\n' +
+    '- Use REAL elements from the game: character names, enemy names, items, weapons, locations.\n' +
+    '- Canvas fills the viewport. Appropriate controls for the genre.\n' +
+    '- Title screen: "' + name + '" in large stylized text + "Press ENTER to start" + controls info.\n' +
+    '- HUD: score, level/wave, health or relevant stats.\n' +
+    '- Progressive difficulty across levels/waves.\n' +
+    '- Game Over screen with final score + "Press ENTER to restart".\n' +
+    '- At least 3 types of challenges/enemies/obstacles.\n' +
+    '- Particle effects on impacts/events.\n' +
+    '- Themed color palette matching the original game.\n' +
+    '- Sound effects using Web Audio API (short beeps/tones).\n\n' +
+    'Start with <!DOCTYPE html>. One single file, HTML+CSS+JS embedded. No markdown.';
 }
 
 function updateLoading(model, sub) {
@@ -142,66 +92,45 @@ function updateLoading(model, sub) {
   document.getElementById('play-loading-sub').textContent = sub;
 }
 
-function buildFullPrompt(name, gameInfo) {
-  var ctx = buildGameContext(name, gameInfo);
-  return 'Create a complete HTML file with a 2D canvas mini-game that is a simplified version of ' + ctx + '. ' +
-    'The mini-game must capture the CORE GAMEPLAY of the original game. ' +
-    'Canvas fills the page. Use controls appropriate to the genre. ' +
-    'Include a title screen with "' + name + ' - Press ENTER", score system, and game over screen. ' +
-    'Progressive difficulty. Themed colors matching the real game. ' +
-    'Use only HTML+CSS+JS in one file. Start with <!DOCTYPE html>. No markdown.';
-}
+// Single-shot AI call with timeout
+async function callAIWithTimeout(system, prompt, model, timeoutMs) {
+  var controller = new AbortController();
+  var timer = setTimeout(function() { controller.abort(); }, timeoutMs);
 
-// ── AI call via OpenRouter proxy (multi-step capable) ──
-async function callAI(system, messages, model) {
-  model = model || 'openrouter/free';
-  var body = {
-    model: model,
-    messages: [{ role: 'system', content: system }].concat(messages),
-    max_tokens: 16000,
-    temperature: 0.7
-  };
-
-  var res = await fetch('/api/openrouter', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
-  if (!res.ok) {
-    var errText = await res.text();
-    console.error('AI error:', res.status, errText);
-    throw new Error('AI ' + res.status);
-  }
-  var json = await res.json();
-  if (json.choices && json.choices[0] && json.choices[0].message) {
-    return json.choices[0].message.content;
-  }
-  if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
-  return '';
-}
-
-// ── Cohere fallback ──
-async function callCohereFallback(system, messages) {
-  var res = await fetch('/api/cohere', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: 'command-a-03-2025',
-      messages: [{ role: 'system', content: system }].concat(messages),
-      max_tokens: 8000,
-      temperature: 0.7
-    })
-  });
-  if (!res.ok) throw new Error('Cohere ' + res.status);
-  var json = await res.json();
-  if (json.message && json.message.content) {
-    if (Array.isArray(json.message.content)) {
-      return json.message.content.map(function(c) { return c.text || ''; }).join('');
+  try {
+    var res = await fetch('/api/openrouter', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 16000,
+        temperature: 0.7
+      })
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      var errText = await res.text();
+      throw new Error(res.status + ': ' + errText.substring(0, 200));
     }
-    return json.message.content;
+    var json = await res.json();
+    if (json.choices && json.choices[0] && json.choices[0].message) {
+      return json.choices[0].message.content;
+    }
+    if (json.error) throw new Error(json.error.message);
+    return '';
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('Timeout (' + (timeoutMs/1000) + 's)');
+    throw e;
   }
-  return '';
 }
+
+
 
 function cleanHTML(h) {
   h = h.replace(/```html\s*/gi, '').replace(/```\s*/g, '');
