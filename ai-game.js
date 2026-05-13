@@ -36,36 +36,6 @@ async function playGame(idx) {
 
   var html = null;
   var iframe = document.getElementById('play-iframe');
-
-  // 1. Search for existing browser port on itch.io
-  updateLoading('Searching', 'Looking for browser version...');
-  var foundWeb = false;
-  try {
-    var searchRes = await fetch('/api/search-game?name=' + encodeURIComponent(game.name));
-    if (searchRes.ok) {
-      var searchData = await searchRes.json();
-      if (searchData.results && searchData.results.length > 0) {
-        // Try first result — itch.io games are embeddable
-        var itchUrl = searchData.results[0].url;
-        console.log('Found itch.io game:', itchUrl);
-        updateLoading('Found!', searchData.results[0].title);
-        
-        // Set iframe src to the itch.io game page
-        iframe.removeAttribute('srcdoc');
-        iframe.src = itchUrl;
-        iframe.sandbox = 'allow-scripts allow-same-origin allow-popups';
-        document.getElementById('play-loading').style.display = 'none';
-        foundWeb = true;
-      }
-    }
-  } catch (e) {
-    console.warn('Game search failed:', e.message);
-  }
-
-  if (foundWeb) return;
-
-  // 2. No web version found — generate with AI (heaviest models first)
-  updateLoading('AI Generation', 'No browser version found, generating...');
   var prompt = buildFullPrompt(game.name, gameInfo);
   var system = 'You make fun 2D HTML5 canvas games. Output ONLY the HTML code. No markdown, no explanation.';
 
