@@ -1,10 +1,4 @@
-/* SteamVault — AI Game Generator (Multi-step Cohere) */
-
-var OR_MODELS = [
-  'google/gemini-2.0-flash-lite-preview-02-05:free',
-  'meta-llama/llama-3.3-70b-instruct:free',
-  'mistralai/mistral-small-24b-instruct-2501:free'
-];
+/* SteamVault — AI Game Generator (Multi-step OpenRouter + Cohere fallback) */
 
 async function playGame(idx) {
   var game = state.library[idx];
@@ -28,32 +22,39 @@ async function playGame(idx) {
 
   var html = null;
 
-  // Multi-step Cohere generation with real game context
-  try {
-    html = await generateGameMultiStep(game.name, gameInfo);
-  } catch (e) {
-    console.warn('Multi-step generation failed:', e);
+  // Try OpenRouter models (best to worst) with multi-step generation
+  var models = [
+    { id: 'google/gemini-2.0-flash-lite-preview-02-05:free', name: 'Gemini Flash' },
+    { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 70B' },
+    { id: 'mistralai/mistral-small-24b-instruct-2501:free', name: 'Mistral 24B' }
+  ];
+
+  for (var m = 0; m < models.length; m++) {
+    try {
+      updateLoading(models[m].name, 'Starting multi-step generation...');
+      html = await generateGameMultiStep(game.name, gameInfo, models[m].id, models[m].name);
+      if (html && html.length > 500 && html.indexOf('<') >= 0) break;
+      html = null;
+    } catch (e) {
+      console.warn(models[m].name + ' failed:', e.message);
+      html = null;
+    }
   }
 
-  // Fallback: single-shot OpenRouter
-  if (!html || html.length < 300) {
-    for (var i = 0; i < OR_MODELS.length; i++) {
-      var modelShort = OR_MODELS[i].split('/').pop().split(':')[0];
-      document.getElementById('play-loading-model').textContent = modelShort;
-      document.getElementById('play-loading-sub').textContent = 'Trying ' + modelShort + '...';
-      try {
-        html = await callOpenRouter(buildFullPrompt(game.name, gameInfo), OR_MODELS[i]);
-        if (html && html.length > 300 && html.indexOf('<') >= 0) break;
-        html = null;
-      } catch (e) {
-        console.warn('OpenRouter ' + OR_MODELS[i] + ':', e.message);
-        html = null;
-      }
+  // Last resort: Cohere single-shot
+  if (!html || html.length < 500) {
+    try {
+      updateLoading('Cohere', 'Trying Cohere fallback...');
+      var msgs = [{ role: 'user', content: buildFullPrompt(game.name, gameInfo) }];
+      var sys = 'You are an expert HTML5 game developer. Output ONLY code. No markdown.';
+      html = await callCohereFallback(sys, msgs);
+    } catch (e) {
+      console.warn('Cohere fallback failed:', e.message);
     }
   }
 
   document.getElementById('play-loading').style.display = 'none';
-  var valid = html && html.length > 300 && html.indexOf('<') >= 0;
+  var valid = html && html.length > 500 && html.indexOf('<') >= 0;
   document.getElementById('play-iframe').srcdoc = valid ? cleanHTML(html) : themedFallbackGame(game.name);
 }
 
@@ -69,7 +70,7 @@ function buildGameContext(name, info) {
 }
 
 // ── Multi-step game generation with Cohere ──
-async function generateGameMultiStep(name, gameInfo) {
+async function generateGameMultiStep(name, gameInfo, modelId, modelName) {
   var messages = [];
   var ctx = buildGameContext(name, gameInfo);
   var system = 'You are an expert HTML5 game developer. You know every Steam game in detail. ' +
@@ -79,7 +80,7 @@ async function generateGameMultiStep(name, gameInfo) {
     'When asked to update code, output the COMPLETE updated HTML file.';
 
   // Step 1: Core gameplay based on real game info
-  updateLoading('Step 1/3', 'Designing game concept...');
+  updateLoading(modelName + ' 1/3', 'Designing game concept...');
   messages.push({
     role: 'user',
     content: 'Create a complete HTML file for a 2D canvas mini-game that is a simplified version of ' + ctx + '. ' +
@@ -94,12 +95,12 @@ async function generateGameMultiStep(name, gameInfo) {
       'Start with <!DOCTYPE html>. Make it fun and playable immediately.'
   });
 
-  var step1 = await callCohere(system, messages);
+  var step1 = await callAI(system, messages, modelId);
   if (!step1 || step1.length < 200) return null;
   messages.push({ role: 'assistant', content: step1 });
 
   // Step 2: Add depth, challenge, scoring
-  updateLoading('Step 2/3', 'Adding challenge & depth...');
+  updateLoading(modelName + ' 2/3', 'Adding challenge & depth...');
   messages.push({
     role: 'user',
     content: 'Update the game. Add these features to the EXISTING code:\n' +
@@ -112,12 +113,12 @@ async function generateGameMultiStep(name, gameInfo) {
       'Output the COMPLETE updated HTML file.'
   });
 
-  var step2 = await callCohere(system, messages);
+  var step2 = await callAI(system, messages, modelId);
   if (!step2 || step2.length < 500) return step1;
   messages.push({ role: 'assistant', content: step2 });
 
   // Step 3: Title screen, HUD, game over, polish
-  updateLoading('Step 3/3', 'Polishing UI...');
+  updateLoading(modelName + ' 3/3', 'Polishing UI...');
   messages.push({
     role: 'user',
     content: 'Final update. Add these to the EXISTING code:\n' +
@@ -129,7 +130,7 @@ async function generateGameMultiStep(name, gameInfo) {
       'Output the COMPLETE final HTML file.'
   });
 
-  var step3 = await callCohere(system, messages);
+  var step3 = await callAI(system, messages, modelId);
   return (step3 && step3.length > 500) ? step3 : step2;
 }
 
@@ -148,8 +149,36 @@ function buildFullPrompt(name, gameInfo) {
     'Use only HTML+CSS+JS in one file. Start with <!DOCTYPE html>. No markdown.';
 }
 
-// ── Cohere via proxy ──
-async function callCohere(system, messages) {
+// ── AI call via OpenRouter proxy (multi-step capable) ──
+async function callAI(system, messages, model) {
+  model = model || 'google/gemini-2.0-flash-lite-preview-02-05:free';
+  var body = {
+    model: model,
+    messages: [{ role: 'system', content: system }].concat(messages),
+    max_tokens: 16000,
+    temperature: 0.7
+  };
+
+  var res = await fetch('/api/openrouter', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  if (!res.ok) {
+    var errText = await res.text();
+    console.error('AI error:', res.status, errText);
+    throw new Error('AI ' + res.status);
+  }
+  var json = await res.json();
+  if (json.choices && json.choices[0] && json.choices[0].message) {
+    return json.choices[0].message.content;
+  }
+  if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
+  return '';
+}
+
+// ── Cohere fallback ──
+async function callCohereFallback(system, messages) {
   var res = await fetch('/api/cohere', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -160,41 +189,13 @@ async function callCohere(system, messages) {
       temperature: 0.7
     })
   });
-  if (!res.ok) {
-    var errText = await res.text();
-    console.error('Cohere error:', res.status, errText);
-    throw new Error('Cohere ' + res.status);
-  }
+  if (!res.ok) throw new Error('Cohere ' + res.status);
   var json = await res.json();
-  // Cohere v2 response
   if (json.message && json.message.content) {
     if (Array.isArray(json.message.content)) {
       return json.message.content.map(function(c) { return c.text || ''; }).join('');
     }
     return json.message.content;
-  }
-  return '';
-}
-
-// ── OpenRouter via proxy ──
-async function callOpenRouter(prompt, model) {
-  var res = await fetch('/api/openrouter', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: model,
-      messages: [
-        { role: 'system', content: 'You are an expert game developer. Output ONLY valid HTML code. No markdown, no explanation, no code fences.' },
-        { role: 'user', content: prompt }
-      ],
-      max_tokens: 8000,
-      temperature: 0.8
-    })
-  });
-  if (!res.ok) throw new Error('OpenRouter proxy ' + res.status);
-  var json = await res.json();
-  if (json.choices && json.choices[0] && json.choices[0].message) {
-    return json.choices[0].message.content;
   }
   return '';
 }
