@@ -1,20 +1,10 @@
-/* SteamVault — AI Game Generator
-   Uses OpenRouter (free models) + Cohere fallback via local proxy */
+/* SteamVault — AI Game Generator (Multi-step Cohere) */
 
 var OR_MODELS = [
   'google/gemini-2.0-flash-lite-preview-02-05:free',
   'meta-llama/llama-3.3-70b-instruct:free',
   'mistralai/mistral-small-24b-instruct-2501:free'
 ];
-
-function buildGamePrompt(name) {
-  return 'Create a complete HTML file with a canvas game inspired by "' + name + '". ' +
-    'Canvas fills the page. WASD to move, click to shoot, Space for special ability. ' +
-    'Show HP bar and score. Title screen says "' + name + ' - Press ENTER". ' +
-    'Enemies spawn and chase player. Score goes up when killed. Game over on 0 HP. ' +
-    'Use themed colors matching the game. Multiple enemy types. Particles on impacts. ' +
-    'Use only HTML+CSS+JS in one file. Start with <!DOCTYPE html>. No markdown, no explanation.';
-}
 
 async function playGame(idx) {
   var game = state.library[idx];
@@ -27,47 +17,138 @@ async function playGame(idx) {
   document.getElementById('play-loading-model').textContent = '';
   document.getElementById('play-iframe').srcdoc = '';
 
-  var prompt = buildGamePrompt(game.name);
   var html = null;
 
-  // 1. OpenRouter free models (via proxy to bypass Sophos)
-  for (var i = 0; i < OR_MODELS.length; i++) {
-    var modelShort = OR_MODELS[i].split('/').pop().split(':')[0];
-    document.getElementById('play-loading-model').textContent = modelShort;
-    document.getElementById('play-loading-sub').textContent = 'Generating with ' + modelShort + '...';
-    try {
-      html = await callOpenRouter(prompt, OR_MODELS[i]);
-      if (html && html.length > 300 && html.indexOf('<') >= 0) break;
-      html = null;
-    } catch (e) {
-      console.warn('OpenRouter ' + OR_MODELS[i] + ':', e.message);
-      html = null;
-    }
+  // Multi-step Cohere generation
+  try {
+    html = await generateGameMultiStep(game.name);
+  } catch (e) {
+    console.warn('Multi-step generation failed:', e);
   }
 
-  // 2. Cohere fallback (via proxy)
-  if (!html) {
-    var cohereModels = ['command-r7b-12-2024', 'command-a-03-2025'];
-    for (var j = 0; j < cohereModels.length; j++) {
-      document.getElementById('play-loading-model').textContent = cohereModels[j];
-      document.getElementById('play-loading-sub').textContent = 'Trying Cohere ' + cohereModels[j] + '...';
+  // Fallback: single-shot OpenRouter
+  if (!html || html.length < 300) {
+    for (var i = 0; i < OR_MODELS.length; i++) {
+      var modelShort = OR_MODELS[i].split('/').pop().split(':')[0];
+      document.getElementById('play-loading-model').textContent = modelShort;
+      document.getElementById('play-loading-sub').textContent = 'Trying ' + modelShort + '...';
       try {
-        html = await callCohere(prompt, cohereModels[j]);
+        html = await callOpenRouter(buildFullPrompt(game.name), OR_MODELS[i]);
         if (html && html.length > 300 && html.indexOf('<') >= 0) break;
         html = null;
       } catch (e) {
-        console.warn('Cohere ' + cohereModels[j] + ':', e.message);
+        console.warn('OpenRouter ' + OR_MODELS[i] + ':', e.message);
         html = null;
       }
     }
   }
 
   document.getElementById('play-loading').style.display = 'none';
-  var validHtml = html && html.length > 300 && html.indexOf('<') >= 0;
-  document.getElementById('play-iframe').srcdoc = validHtml ? cleanHTML(html) : themedFallbackGame(game.name);
+  var valid = html && html.length > 300 && html.indexOf('<') >= 0;
+  document.getElementById('play-iframe').srcdoc = valid ? cleanHTML(html) : themedFallbackGame(game.name);
 }
 
-// OpenRouter via local proxy (to avoid CORS + Sophos)
+// ── Multi-step game generation with Cohere ──
+async function generateGameMultiStep(name) {
+  var messages = [];
+  var system = 'You are an expert HTML5 game developer. You write self-contained HTML files with embedded CSS and JS. Output ONLY code, no markdown fences, no explanation. When asked to update code, output the COMPLETE updated HTML file.';
+
+  // Step 1: Base game with canvas + player
+  updateLoading('Step 1/3', 'Creating player & world...');
+  messages.push({
+    role: 'user',
+    content: 'Create a complete HTML file for a 2D canvas game inspired by "' + name + '". ' +
+      'The canvas fills the viewport. The player is a colored triangle that rotates toward the mouse. ' +
+      'WASD moves the player. Clicking shoots a projectile toward the mouse. ' +
+      'Add a scrolling starfield background. Use colors that match the theme of "' + name + '". ' +
+      'Start with <!DOCTYPE html>. Make the player movement smooth with camera follow.'
+  });
+
+  var step1 = await callCohere(system, messages);
+  if (!step1 || step1.length < 200) return null;
+  messages.push({ role: 'assistant', content: step1 });
+
+  // Step 2: Add enemies, collisions, scoring
+  updateLoading('Step 2/3', 'Adding enemies & combat...');
+  messages.push({
+    role: 'user',
+    content: 'Update the game. Add these features to the EXISTING code:\n' +
+      '1. Three enemy types: small fast ones (triangles), medium ones (circles), big slow tanks (squares)\n' +
+      '2. Enemies spawn off-screen every few seconds and chase the player\n' +
+      '3. Bullets kill enemies (show particle explosions on death)\n' +
+      '4. Enemies damage the player on contact (player has 100 HP)\n' +
+      '5. Score increases when enemies are killed (10/15/25 points by type)\n' +
+      '6. Enemies have HP bars above them\n' +
+      '7. Dead enemies sometimes drop health pickups (green) or special charge (blue)\n' +
+      'Output the COMPLETE updated HTML file.'
+  });
+
+  var step2 = await callCohere(system, messages);
+  if (!step2 || step2.length < 500) return step1; // fallback to step1
+  messages.push({ role: 'assistant', content: step2 });
+
+  // Step 3: HUD, title screen, game over, polish
+  updateLoading('Step 3/3', 'Adding UI & polish...');
+  messages.push({
+    role: 'user',
+    content: 'Final update. Add these to the EXISTING code:\n' +
+      '1. Title screen: show "' + name + '" in large text + "Press ENTER to start" (game starts paused)\n' +
+      '2. HUD overlay: HP bar (top-left), score display, wave counter, special ability bar\n' +
+      '3. Space bar triggers special attack (ring of 16 bullets) when special bar is full\n' +
+      '4. Wave system: after killing enough enemies, wave increases, enemies get stronger\n' +
+      '5. Game Over screen when HP reaches 0: show final score + "Press ENTER to restart"\n' +
+      '6. Mini-map in top-right corner showing enemy positions as dots\n' +
+      '7. Particle effects on all impacts\n' +
+      'Output the COMPLETE final HTML file.'
+  });
+
+  var step3 = await callCohere(system, messages);
+  return (step3 && step3.length > 500) ? step3 : step2;
+}
+
+function updateLoading(model, sub) {
+  document.getElementById('play-loading-model').textContent = model;
+  document.getElementById('play-loading-sub').textContent = sub;
+}
+
+function buildFullPrompt(name) {
+  return 'Create a complete HTML file with a canvas game inspired by "' + name + '". ' +
+    'Canvas fills the page. WASD to move, click to shoot, Space for special ability. ' +
+    'Show HP bar and score. Title screen says "' + name + ' - Press ENTER". ' +
+    'Enemies spawn and chase player. Score goes up when killed. Game over on 0 HP. ' +
+    'Use themed colors. Multiple enemy types. Particles on impacts. ' +
+    'Use only HTML+CSS+JS in one file. Start with <!DOCTYPE html>. No markdown.';
+}
+
+// ── Cohere via proxy ──
+async function callCohere(system, messages) {
+  var res = await fetch('/api/cohere', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'command-a-03-2025',
+      messages: [{ role: 'system', content: system }].concat(messages),
+      max_tokens: 8000,
+      temperature: 0.7
+    })
+  });
+  if (!res.ok) {
+    var errText = await res.text();
+    console.error('Cohere error:', res.status, errText);
+    throw new Error('Cohere ' + res.status);
+  }
+  var json = await res.json();
+  // Cohere v2 response
+  if (json.message && json.message.content) {
+    if (Array.isArray(json.message.content)) {
+      return json.message.content.map(function(c) { return c.text || ''; }).join('');
+    }
+    return json.message.content;
+  }
+  return '';
+}
+
+// ── OpenRouter via proxy ──
 async function callOpenRouter(prompt, model) {
   var res = await fetch('/api/openrouter', {
     method: 'POST',
@@ -87,32 +168,6 @@ async function callOpenRouter(prompt, model) {
   if (json.choices && json.choices[0] && json.choices[0].message) {
     return json.choices[0].message.content;
   }
-  if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
-  return '';
-}
-
-// Cohere via local proxy
-async function callCohere(prompt, model) {
-  var res = await fetch('/api/cohere', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: model,
-      messages: [
-        { role: 'system', content: 'You are an expert game developer. Output ONLY valid HTML code. No markdown, no explanation, no code fences.' },
-        { role: 'user', content: prompt }
-      ],
-      max_tokens: 8000,
-      temperature: 0.8
-    })
-  });
-  if (!res.ok) throw new Error('Cohere proxy ' + res.status);
-  var json = await res.json();
-  // Cohere v2 response format
-  if (json.message && json.message.content && json.message.content[0]) {
-    return json.message.content[0].text;
-  }
-  if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
   return '';
 }
 
