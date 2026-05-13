@@ -7,12 +7,11 @@ var NV_MODELS = [
 ];
 
 function buildGamePrompt(name) {
-  return 'You are an expert game developer. Create a COMPLETE, SELF-CONTAINED HTML file for a top-down 2D canvas game based on "' + name + '".\n' +
-    'Include accurate characters, enemies, weapons, abilities from the real game. Match its visual style and color palette.\n' +
-    'Canvas fills viewport. WASD move, click shoot, Space special ability. HUD with HP bar, score, cooldown.\n' +
-    'Title screen with game name + "Press ENTER". Game over with score. Procedural spawning, increasing difficulty.\n' +
-    'Particle effects, sound via Web Audio API, minimap. At least 3 enemy types from the game.\n' +
-    'Output ONLY the HTML. Start with <!DOCTYPE html>, end with </html>. No markdown, no explanation, no code fences.';
+  return 'Create a complete HTML file with a canvas game about "' + name + '". ' +
+    'Canvas fills the page. WASD to move, click to shoot, Space for special. ' +
+    'Show HP bar and score. Title screen says "' + name + ' - Press ENTER". ' +
+    'Enemies spawn and chase player. Score goes up when killed. Game over on 0 HP. ' +
+    'Use only HTML+CSS+JS in one file. Start with <!DOCTYPE html>. No markdown.';
 }
 
 async function playGame(idx) {
@@ -26,39 +25,28 @@ async function playGame(idx) {
   document.getElementById('play-loading-model').textContent = '';
   document.getElementById('play-iframe').srcdoc = '';
 
-  // 1. Pollinations.ai (gen.pollinations.ai) — free, no key
-  var pollinModels = ['qwen-coder', 'deepseek', 'gemini', 'openai', 'mistral'];
-  for (var p = 0; p < pollinModels.length; p++) {
-    document.getElementById('play-loading-model').textContent = pollinModels[p] + ' (Pollinations)';
-    document.getElementById('play-loading-sub').textContent = 'Generating with ' + pollinModels[p] + '...';
-    try {
-      html = await callPollinations(prompt, pollinModels[p]);
-      if (html && html.length > 500 && html.indexOf('<') >= 0) break;
-      html = null;
-    } catch (e) {
-      console.warn('Pollinations ' + pollinModels[p] + ':', e);
-      html = null;
-    }
+  // Pollinations.ai (text.pollinations.ai) — free, anonymous
+  document.getElementById('play-loading-model').textContent = 'AI Game Engine';
+  document.getElementById('play-loading-sub').textContent = 'Generating game...';
+  try {
+    html = await callPollinations(prompt, 'openai');
+  } catch (e) {
+    console.warn('Pollinations failed:', e);
   }
 
-  // 2. Fallback: Pollinations via local proxy (if CORS blocked)
-  if (!html) {
-    for (var p2 = 0; p2 < pollinModels.length; p2++) {
-      document.getElementById('play-loading-model').textContent = pollinModels[p2] + ' (proxy)';
-      document.getElementById('play-loading-sub').textContent = 'Trying proxy for ' + pollinModels[p2] + '...';
-      try {
-        html = await callPollinationsProxy(prompt, pollinModels[p2]);
-        if (html && html.length > 500 && html.indexOf('<') >= 0) break;
-        html = null;
-      } catch (e) {
-        console.warn('Proxy pollinations ' + pollinModels[p2] + ':', e);
-        html = null;
-      }
+  // Try proxy if direct CORS failed
+  if (!html || html.length < 200) {
+    try {
+      document.getElementById('play-loading-sub').textContent = 'Trying alternate route...';
+      html = await callPollinationsProxy(prompt, 'openai');
+    } catch (e) {
+      console.warn('Proxy failed:', e);
     }
   }
 
   document.getElementById('play-loading').style.display = 'none';
-  document.getElementById('play-iframe').srcdoc = html ? cleanHTML(html) : themedFallbackGame(game.name);
+  var validHtml = html && html.length > 200 && html.indexOf('<') >= 0;
+  document.getElementById('play-iframe').srcdoc = validHtml ? cleanHTML(html) : themedFallbackGame(game.name);
 }
 
 // Direct browser call to Pollinations.ai (CORS enabled, free)
@@ -72,7 +60,7 @@ async function callPollinations(prompt, model) {
     seed: Math.floor(Math.random() * 100000)
   };
 
-  var res = await fetch('https://gen.pollinations.ai/v1/chat/completions', {
+  var res = await fetch('https://text.pollinations.ai/openai', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
