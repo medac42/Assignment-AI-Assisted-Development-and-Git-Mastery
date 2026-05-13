@@ -34,101 +34,84 @@ async function playGame(idx) {
     logoEl.style.display = 'none';
   }
 
-  var html = null;
   var iframe = document.getElementById('play-iframe');
 
-  // Fake progress messages
-  var fakeSteps = [
-    'Researching game lore...', 'Analyzing core mechanics...', 'Identifying iconic elements...',
-    'Designing 2D adaptation...', 'Planning visual style...', 'Choosing color palette...',
-    'Writing game blueprint...', 'Creating player character...', 'Building level layout...',
-    'Programming game physics...', 'Adding collision detection...', 'Setting up controls...',
-    'Implementing scoring system...', 'Adding visual effects...', 'Creating title screen...',
-    'Polishing animations...', 'Adding sound effects...', 'Final optimizations...'
-  ];
-  var fakeIdx = 0;
-  var startTime = Date.now();
-  var progressInterval = setInterval(function() {
-    var elapsed = Math.floor((Date.now() - startTime) / 1000);
-    var mins = Math.floor(elapsed / 60);
-    var secs = elapsed % 60;
-    var timeStr = mins > 0 ? mins + 'm ' + secs + 's' : secs + 's';
-    document.getElementById('play-loading-sub').textContent = fakeSteps[fakeIdx % fakeSteps.length];
-    document.getElementById('play-loading-model').textContent = 
-      document.getElementById('play-loading-model').textContent.split(' — ')[0] + ' — ' + timeStr;
-    fakeIdx++;
-  }, 3000);
+  // If Steam has gameplay videos, embed them directly
+  if (gameInfo && gameInfo.movies && gameInfo.movies.length > 0) {
+    var movie = gameInfo.movies[0];
+    var videoUrl = movie.mp4 || movie.webm;
+    var screenshots = (gameInfo.screenshots || []);
+    
+    document.getElementById('play-loading').style.display = 'none';
+    iframe.removeAttribute('srcdoc');
+    iframe.sandbox = 'allow-scripts allow-same-origin allow-forms allow-popups';
+    
+    // Build a styled video player page
+    var videoHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' + game.name + '</title>' +
+      '<style>' +
+      '*{margin:0;padding:0;box-sizing:border-box}' +
+      'body{background:#1b2838;color:#c7d5e0;font-family:Arial,sans-serif;overflow-x:hidden}' +
+      '.hero{position:relative;width:100%;height:100vh;display:flex;align-items:center;justify-content:center;background:#000}' +
+      'video{width:100%;height:100%;object-fit:contain;background:#000}' +
+      '.controls{position:absolute;bottom:0;left:0;right:0;padding:16px 24px;background:linear-gradient(transparent,rgba(0,0,0,.9));display:flex;align-items:center;gap:16px;opacity:0;transition:.3s}' +
+      '.hero:hover .controls{opacity:1}' +
+      '.play-btn{background:#67c1f5;border:none;color:#1b2838;font-size:18px;font-weight:bold;padding:10px 28px;border-radius:4px;cursor:pointer}' +
+      '.play-btn:hover{background:#fff}' +
+      '.title-overlay{position:absolute;top:24px;left:24px;z-index:2;text-shadow:0 2px 8px rgba(0,0,0,.8)}' +
+      '.title-overlay h1{font-size:28px;color:#fff;margin-bottom:4px}' +
+      '.title-overlay p{font-size:14px;color:#acdbf5}' +
+      '.gallery{padding:24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}' +
+      '.gallery img{width:100%;border-radius:4px;cursor:pointer;transition:.2s;border:2px solid transparent}' +
+      '.gallery img:hover{border-color:#67c1f5;transform:scale(1.02)}' +
+      '.info-bar{padding:16px 24px;background:#16202d;display:flex;align-items:center;gap:16px;border-bottom:1px solid #2a475e}' +
+      '.info-bar .tag{background:#2a475e;color:#67c1f5;padding:4px 12px;border-radius:12px;font-size:12px}' +
+      '</style></head><body>' +
+      '<div class="hero">' +
+      '<div class="title-overlay"><h1>' + game.name.replace(/</g, '&lt;') + '</h1>' +
+      '<p>' + (gameInfo.short_description || '').replace(/</g, '&lt;').substring(0, 120) + '</p></div>' +
+      '<video id="v" autoplay controls loop>' +
+      '<source src="' + videoUrl + '" type="video/mp4">' +
+      '</video></div>';
 
-  // ══ STEP 1: ARCHITECT — Groq researches the game and designs the mini-game ══
-  updateLoading('Architect (Groq)', 'Researching ' + game.name + '...');
-  var desc = (gameInfo && gameInfo.short_description) ? gameInfo.short_description : '';
-  var blueprint = null;
-
-  var architectPrompt = 'You are a game design expert. I need you to design a 2D HTML5 canvas mini-game based on the Steam game "' + game.name + '".' +
-    (desc ? ' The game is about: ' + desc : '') +
-    '\n\nDescribe in detail:' +
-    '\n1. VISUAL STYLE: What does the background look like? What colors? What atmosphere? Describe the environment layer by layer (sky, background, ground, foreground).' +
-    '\n2. PLAYER: How should the player character look? (describe shape, colors, size). What animations? What does the player DO?' +
-    '\n3. GAMEPLAY: What is the core mechanic? What makes this game unique? How does the player interact? What are the controls?' +
-    '\n4. GAME OBJECTS: List 5+ specific objects/characters from the real game with their visual description (shape, color, size) and behavior.' +
-    '\n5. HUD: What info should be shown? Health bar style? Ammo counter? Special meters?' +
-    '\n6. TITLE SCREEN: Describe the themed title screen with colors, effects, and layout.' +
-    '\n7. PROGRESSION: How does difficulty increase? What happens when you lose?' +
-    '\nBe SPECIFIC. Use real names, places, and elements from "' + game.name + '". This must feel like THAT game, not a generic game.';
-
-  try {
-    blueprint = await callGroqWithTimeout(
-      'You are a game design expert who knows every video game in detail. Give a detailed design document.',
-      architectPrompt, 'llama-3.3-70b-versatile', 20000
-    );
-    if (blueprint) console.log('Blueprint ready (' + blueprint.length + ' chars)');
-  } catch (e) {
-    console.warn('Architect failed:', e.message);
-  }
-
-  // ══ STEP 2: BUILDER — Heavy model creates the code from the blueprint ══
-  var codePrompt;
-  if (blueprint && blueprint.length > 200) {
-    codePrompt = 'A game designer created this detailed design for a 2D canvas mini-game based on "' + game.name + '":\n\n' +
-      '--- DESIGN DOCUMENT ---\n' + blueprint + '\n--- END ---\n\n' +
-      'Now implement this EXACT design as a complete HTML5 canvas game. Follow the visual descriptions precisely. ' +
-      'Draw everything described — environments, characters, objects — as detailed canvas shapes. ' +
-      'Include the title screen, HUD, gameplay, and game over screen as described. ' +
-      'Start with <!DOCTYPE html>. Single complete HTML file. Output ONLY code.';
-  } else {
-    codePrompt = buildFullPrompt(game.name, gameInfo);
-  }
-
-  var system = 'You are an expert HTML5 game developer. Output ONLY the complete HTML code. No markdown, no explanation, no commentary.';
-
-  var models = [
-    { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B' },
-    { id: 'inclusionai/ring-2.6-1t:free', name: 'Ring 1T' },
-    { id: 'nvidia/nemotron-3-super:free', name: 'Nemotron 120B' },
-    { id: 'poolside/laguna-m.1:free', name: 'Laguna M.1' }
-  ];
-
-  for (var m = 0; m < models.length; m++) {
-    updateLoading(models[m].name, 'Building game from blueprint...');
-    try {
-      html = await callAIWithTimeout(system, codePrompt, models[m].id, 120000);
-      if (html && html.length > 800 && html.indexOf('<') >= 0) {
-        console.log(models[m].name + ' success! (' + html.length + ' chars)');
-        break;
-      }
-      html = null;
-    } catch (e) {
-      console.warn(models[m].name + ':', e.message);
-      html = null;
+    // Info bar with genres
+    if (gameInfo.genres) {
+      videoHtml += '<div class="info-bar">';
+      gameInfo.genres.split(', ').forEach(function(g) {
+        videoHtml += '<span class="tag">' + g + '</span>';
+      });
+      if (gameInfo.developers) videoHtml += '<span class="tag">🎮 ' + gameInfo.developers + '</span>';
+      videoHtml += '</div>';
     }
+
+    // Screenshots gallery
+    if (screenshots.length > 0) {
+      videoHtml += '<div class="gallery">';
+      screenshots.forEach(function(src) {
+        videoHtml += '<img src="' + src + '" alt="Screenshot">';
+      });
+      videoHtml += '</div>';
+    }
+
+    videoHtml += '</body></html>';
+    iframe.srcdoc = videoHtml;
+    return;
   }
 
-  clearInterval(progressInterval);
+  // No video available — show YouTube search as fallback
   document.getElementById('play-loading').style.display = 'none';
-  iframe.removeAttribute('src');
-  iframe.sandbox = 'allow-scripts allow-same-origin allow-forms allow-popups';
-  var valid = html && html.length > 800 && html.indexOf('<') >= 0;
-  iframe.srcdoc = valid ? cleanHTML(html) : themedFallbackGame(game.name);
+  var ytQuery = encodeURIComponent(game.name + ' gameplay trailer');
+  var fallbackHtml = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' + game.name + '</title>' +
+    '<style>*{margin:0;padding:0}body{background:#1b2838;color:#c7d5e0;font-family:Arial,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center}' +
+    'h1{font-size:28px;margin-bottom:12px;color:#fff}p{font-size:14px;color:#8f98a0;margin-bottom:24px;max-width:500px}' +
+    'a{display:inline-block;background:#67c1f5;color:#1b2838;text-decoration:none;padding:14px 32px;border-radius:4px;font-weight:bold;font-size:16px;transition:.2s}' +
+    'a:hover{background:#fff;transform:scale(1.05)}' +
+    '.header-img{max-width:460px;width:90%;border-radius:8px;margin-bottom:20px;box-shadow:0 4px 20px rgba(0,0,0,.5)}</style></head>' +
+    '<body><img class="header-img" src="https://cdn.cloudflare.steamstatic.com/steam/apps/' + (game.steamAppID || '0') + '/header.jpg" onerror="this.style.display=\'none\'">' +
+    '<h1>' + game.name.replace(/</g, '&lt;') + '</h1>' +
+    '<p>No gameplay video available from Steam. Watch on YouTube:</p>' +
+    '<a href="https://www.youtube.com/results?search_query=' + ytQuery + '" target="_blank">🎬 Watch Gameplay on YouTube</a>' +
+    '</body></html>';
+  iframe.srcdoc = fallbackHtml;
 }
 
 function buildFullPrompt(name, gameInfo) {

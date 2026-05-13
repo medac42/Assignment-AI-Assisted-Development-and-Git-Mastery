@@ -201,7 +201,13 @@ const server = http.createServer((req, res) => {
             categories: (d.categories || []).map(c => c.description).join(', '),
             type: d.type || '',
             developers: (d.developers || []).join(', '),
-            publishers: (d.publishers || []).join(', ')
+            publishers: (d.publishers || []).join(', '),
+            movies: (d.movies || []).map(m => ({
+              name: m.name,
+              mp4: m.mp4 && m.mp4.max ? m.mp4.max : (m.mp4 && m.mp4['480'] ? m.mp4['480'] : ''),
+              webm: m.webm && m.webm.max ? m.webm.max : ''
+            })).filter(m => m.mp4 || m.webm),
+            screenshots: (d.screenshots || []).slice(0, 4).map(s => s.path_full)
           };
           // Strip HTML from description
           info.short_description = info.short_description.replace(/<[^>]*>/g, '');
