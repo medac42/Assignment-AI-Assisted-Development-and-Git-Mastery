@@ -39,16 +39,38 @@ async function playGame(idx) {
   var prompt = buildFullPrompt(game.name, gameInfo);
   var system = 'You make fun 2D HTML5 canvas games. Output ONLY the HTML code. No markdown, no explanation.';
 
+  // Fake progress messages to keep user engaged
+  var fakeSteps = [
+    'Analyzing game mechanics...', 'Studying original gameplay...', 'Identifying key elements...',
+    'Designing game world...', 'Creating player character...', 'Building level layout...',
+    'Programming game physics...', 'Adding collision detection...', 'Setting up controls...',
+    'Designing enemies & obstacles...', 'Implementing scoring system...', 'Adding visual effects...',
+    'Creating title screen...', 'Polishing animations...', 'Adding sound effects...',
+    'Balancing difficulty...', 'Testing gameplay loop...', 'Final optimizations...'
+  ];
+  var fakeIdx = 0;
+  var startTime = Date.now();
+  var progressInterval = setInterval(function() {
+    var elapsed = Math.floor((Date.now() - startTime) / 1000);
+    var mins = Math.floor(elapsed / 60);
+    var secs = elapsed % 60;
+    var timeStr = mins > 0 ? mins + 'm ' + secs + 's' : secs + 's';
+    document.getElementById('play-loading-sub').textContent = fakeSteps[fakeIdx % fakeSteps.length];
+    document.getElementById('play-loading-model').textContent = 
+      document.getElementById('play-loading-model').textContent.split(' — ')[0] + ' — ' + timeStr;
+    fakeIdx++;
+  }, 3000);
+
   // 1. Try heaviest models first (quality over speed)
   var models = [
-    { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B', api: 'openrouter' },
-    { id: 'inclusionai/ring-2.6-1t:free', name: 'Ring 1T', api: 'openrouter' },
-    { id: 'nvidia/nemotron-3-super:free', name: 'Nemotron 120B', api: 'openrouter' },
-    { id: 'poolside/laguna-m.1:free', name: 'Laguna M.1', api: 'openrouter' }
+    { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B' },
+    { id: 'inclusionai/ring-2.6-1t:free', name: 'Ring 1T' },
+    { id: 'nvidia/nemotron-3-super:free', name: 'Nemotron 120B' },
+    { id: 'poolside/laguna-m.1:free', name: 'Laguna M.1' }
   ];
 
   for (var m = 0; m < models.length; m++) {
-    updateLoading(models[m].name, 'Generating...');
+    updateLoading(models[m].name, fakeSteps[0]);
     try {
       html = await callAIWithTimeout(system, prompt, models[m].id, 120000);
       if (html && html.length > 800 && html.indexOf('<canvas') >= 0) {
@@ -63,6 +85,7 @@ async function playGame(idx) {
     }
   }
 
+  clearInterval(progressInterval);
   document.getElementById('play-loading').style.display = 'none';
   iframe.removeAttribute('src');
   iframe.sandbox = 'allow-scripts';
