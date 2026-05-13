@@ -36,17 +36,15 @@ async function playGame(idx) {
 
   var html = null;
   var iframe = document.getElementById('play-iframe');
-  var prompt = buildFullPrompt(game.name, gameInfo);
-  var system = 'You make fun 2D HTML5 canvas games. Output ONLY the HTML code. No markdown, no explanation.';
 
-  // Fake progress messages to keep user engaged
+  // Fake progress messages
   var fakeSteps = [
-    'Analyzing game mechanics...', 'Studying original gameplay...', 'Identifying key elements...',
-    'Designing game world...', 'Creating player character...', 'Building level layout...',
+    'Researching game lore...', 'Analyzing core mechanics...', 'Identifying iconic elements...',
+    'Designing 2D adaptation...', 'Planning visual style...', 'Choosing color palette...',
+    'Writing game blueprint...', 'Creating player character...', 'Building level layout...',
     'Programming game physics...', 'Adding collision detection...', 'Setting up controls...',
-    'Designing enemies & obstacles...', 'Implementing scoring system...', 'Adding visual effects...',
-    'Creating title screen...', 'Polishing animations...', 'Adding sound effects...',
-    'Balancing difficulty...', 'Testing gameplay loop...', 'Final optimizations...'
+    'Implementing scoring system...', 'Adding visual effects...', 'Creating title screen...',
+    'Polishing animations...', 'Adding sound effects...', 'Final optimizations...'
   ];
   var fakeIdx = 0;
   var startTime = Date.now();
@@ -61,7 +59,48 @@ async function playGame(idx) {
     fakeIdx++;
   }, 3000);
 
-  // 1. Try heaviest models first (quality over speed)
+  // ══ STEP 1: ARCHITECT — Groq researches the game and designs the mini-game ══
+  updateLoading('Architect (Groq)', 'Researching ' + game.name + '...');
+  var desc = (gameInfo && gameInfo.short_description) ? gameInfo.short_description : '';
+  var blueprint = null;
+
+  var architectPrompt = 'You are a game design expert. I need you to design a 2D HTML5 canvas mini-game based on the Steam game "' + game.name + '".' +
+    (desc ? ' The game is about: ' + desc : '') +
+    '\n\nDescribe in detail:' +
+    '\n1. VISUAL STYLE: What does the background look like? What colors? What atmosphere? Describe the environment layer by layer (sky, background, ground, foreground).' +
+    '\n2. PLAYER: How should the player character look? (describe shape, colors, size). What animations? What does the player DO?' +
+    '\n3. GAMEPLAY: What is the core mechanic? What makes this game unique? How does the player interact? What are the controls?' +
+    '\n4. GAME OBJECTS: List 5+ specific objects/characters from the real game with their visual description (shape, color, size) and behavior.' +
+    '\n5. HUD: What info should be shown? Health bar style? Ammo counter? Special meters?' +
+    '\n6. TITLE SCREEN: Describe the themed title screen with colors, effects, and layout.' +
+    '\n7. PROGRESSION: How does difficulty increase? What happens when you lose?' +
+    '\nBe SPECIFIC. Use real names, places, and elements from "' + game.name + '". This must feel like THAT game, not a generic game.';
+
+  try {
+    blueprint = await callGroqWithTimeout(
+      'You are a game design expert who knows every video game in detail. Give a detailed design document.',
+      architectPrompt, 'llama-3.3-70b-versatile', 20000
+    );
+    if (blueprint) console.log('Blueprint ready (' + blueprint.length + ' chars)');
+  } catch (e) {
+    console.warn('Architect failed:', e.message);
+  }
+
+  // ══ STEP 2: BUILDER — Heavy model creates the code from the blueprint ══
+  var codePrompt;
+  if (blueprint && blueprint.length > 200) {
+    codePrompt = 'A game designer created this detailed design for a 2D canvas mini-game based on "' + game.name + '":\n\n' +
+      '--- DESIGN DOCUMENT ---\n' + blueprint + '\n--- END ---\n\n' +
+      'Now implement this EXACT design as a complete HTML5 canvas game. Follow the visual descriptions precisely. ' +
+      'Draw everything described — environments, characters, objects — as detailed canvas shapes. ' +
+      'Include the title screen, HUD, gameplay, and game over screen as described. ' +
+      'Start with <!DOCTYPE html>. Single complete HTML file. Output ONLY code.';
+  } else {
+    codePrompt = buildFullPrompt(game.name, gameInfo);
+  }
+
+  var system = 'You are an expert HTML5 game developer. Output ONLY the complete HTML code. No markdown, no explanation, no commentary.';
+
   var models = [
     { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B' },
     { id: 'inclusionai/ring-2.6-1t:free', name: 'Ring 1T' },
@@ -70,14 +109,13 @@ async function playGame(idx) {
   ];
 
   for (var m = 0; m < models.length; m++) {
-    updateLoading(models[m].name, fakeSteps[0]);
+    updateLoading(models[m].name, 'Building game from blueprint...');
     try {
-      html = await callAIWithTimeout(system, prompt, models[m].id, 120000);
-      if (html && html.length > 800 && html.indexOf('<canvas') >= 0) {
+      html = await callAIWithTimeout(system, codePrompt, models[m].id, 120000);
+      if (html && html.length > 800 && html.indexOf('<') >= 0) {
         console.log(models[m].name + ' success! (' + html.length + ' chars)');
         break;
       }
-      console.warn(models[m].name + ': no valid canvas game');
       html = null;
     } catch (e) {
       console.warn(models[m].name + ':', e.message);
