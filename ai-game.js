@@ -101,7 +101,7 @@ function buildFullPrompt(name, gameInfo) {
     'If it is Stardew Valley, make farming with crops. If it is Dark Souls, make tough combat. ' +
     'Whatever the game is, think about what makes it unique and recreate THAT. ' +
     'Use real names from the game. Colorful visuals, not plain squares on black. ' +
-    'Title screen with "' + name + '", press ENTER, score, game over. Canvas fills viewport. ' +
+    'Title screen with "' + name + '", controls list, and press ENTER to start. Score, game over. Canvas fills viewport. ' +
     '<!DOCTYPE html>. Single file. No markdown.';
 }
 
