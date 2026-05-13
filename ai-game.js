@@ -29,42 +29,25 @@ async function playGame(idx) {
   var prompt = buildGamePrompt(game.name);
   var html = null;
 
-  // 1. Try Puter.js with free models
-  if (typeof puter !== 'undefined' && puter.ai && puter.ai.chat) {
-    var puterModels = ['gpt-4o-mini','gpt-4.1-nano','gpt-4.1-mini','o4-mini','gpt-4o','gpt-5-nano','gpt-5-mini'];
-    for (var p = 0; p < puterModels.length; p++) {
-      document.getElementById('play-loading-model').textContent = puterModels[p] + ' (Puter.js)';
-      document.getElementById('play-loading-sub').textContent = 'Generating with ' + puterModels[p] + '...';
-      try {
-        var res = await puter.ai.chat(prompt, { model: puterModels[p] });
-        var text = '';
-        if (typeof res === 'string') text = res;
-        else if (res && res.message && res.message.content) {
-          if (Array.isArray(res.message.content)) {
-            for (var i = 0; i < res.message.content.length; i++) if (res.message.content[i].type === 'text') text += res.message.content[i].text;
-          } else text = res.message.content;
-        }
-        if (text && text.length > 500 && text.indexOf('<') >= 0) { html = text; break; }
-      } catch (e) {
-        console.warn('Puter ' + puterModels[p] + ':', e);
-      }
-    }
-  }
-
-  // 2. Fallback: g4f.space via local proxy
-  if (!html) {
-    var g4fProviders = ['nvidia', 'gemini', 'groq', 'pollinations'];
-    for (var g = 0; g < g4fProviders.length; g++) {
-      document.getElementById('play-loading-model').textContent = 'g4f/' + g4fProviders[g];
-      document.getElementById('play-loading-sub').textContent = 'Connecting to g4f ' + g4fProviders[g] + '...';
-      try {
-        html = await callLocalProxy(prompt, g4fProviders[g]);
-        if (html && html.length > 500 && html.indexOf('<') >= 0) break;
-        html = null;
-      } catch (e) {
-        console.warn('g4f ' + g4fProviders[g] + ' failed:', e);
-        html = null;
-      }
+  // g4f.space via local proxy (free, no API key)
+  var g4fAttempts = [
+    { provider: 'auto', model: 'gpt-4o' },
+    { provider: 'pollinations', model: 'openai' },
+    { provider: 'pollinations', model: 'claude-hybridspace' },
+    { provider: 'gemini', model: 'gemini-2.0-flash' },
+    { provider: 'groq', model: 'llama-3.3-70b-versatile' }
+  ];
+  for (var g = 0; g < g4fAttempts.length; g++) {
+    var attempt = g4fAttempts[g];
+    document.getElementById('play-loading-model').textContent = attempt.provider + '/' + attempt.model;
+    document.getElementById('play-loading-sub').textContent = 'Connecting to g4f ' + attempt.provider + '...';
+    try {
+      html = await callLocalProxy(prompt, attempt.provider, attempt.model);
+      if (html && html.length > 500 && html.indexOf('<') >= 0) break;
+      html = null;
+    } catch (e) {
+      console.warn('g4f ' + attempt.provider + '/' + attempt.model + ':', e);
+      html = null;
     }
   }
 
@@ -72,10 +55,10 @@ async function playGame(idx) {
   document.getElementById('play-iframe').srcdoc = html ? cleanHTML(html) : themedFallbackGame(game.name);
 }
 
-// Call local proxy -> g4f.space (streaming SSE)
-async function callLocalProxy(prompt, provider) {
+// Call local proxy -> g4f.space
+async function callLocalProxy(prompt, provider, model) {
   var payload = {
-    model: 'gpt-4o',
+    model: model || 'gpt-4o',
     messages: [{ role: 'user', content: prompt }],
     temperature: 0.9,
     provider: provider
