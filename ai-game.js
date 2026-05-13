@@ -99,8 +99,8 @@ function buildGameContext(name, info) {
 
 function buildFullPrompt(name, gameInfo) {
   var ctx = buildGameContext(name, gameInfo);
-  return 'Make a simple, fun 2D canvas mini-game based on ' + ctx + '. ' +
-    'Use real characters, enemies, items, and elements from the actual game. ' +
+  return 'Make a simple, fun 2D canvas mini-game that plays like a mini version of ' + ctx + '. ' +
+    'Use real elements from the actual game (characters, items, tools, places, mechanics). ' +
     'Keep it simple but playable. Title screen with "' + name + '" and press ENTER. ' +
     'Score, game over, restart. Canvas fills viewport. ' +
     'Start with <!DOCTYPE html>. Single HTML file.';
