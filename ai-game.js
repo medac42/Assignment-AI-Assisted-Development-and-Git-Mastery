@@ -1,8 +1,5 @@
 /* SteamVault — AI Game Generator
-   NVIDIA API via CORS proxy + Puter.js fallback + themed procedural fallback */
-
-var NV_KEY = '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';
-var NV_URL = 'https://corsproxy.io/?https://integrate.api.nvidia.com/v1/chat/completions';
+   Calls local /api/chat proxy -> NVIDIA API. No CORS issues. */
 
 var NV_MODELS = [
   { id: 'google/gemma-4-31b-it', name: 'Gemma 4 31B', tkw: { enable_thinking: true } },
@@ -32,13 +29,13 @@ async function playGame(idx) {
   var prompt = buildGamePrompt(game.name);
   var html = null;
 
-  // 1. Try NVIDIA API via CORS proxy
+  // Try each NVIDIA model via local proxy
   for (var m = 0; m < NV_MODELS.length; m++) {
     var model = NV_MODELS[m];
     document.getElementById('play-loading-model').textContent = model.name + (m > 0 ? ' (fallback)' : '');
     document.getElementById('play-loading-sub').textContent = 'Connecting to ' + model.name + '...';
     try {
-      html = await callNvidia(prompt, model);
+      html = await callLocalProxy(prompt, model);
       if (html && html.length > 500 && html.indexOf('<') >= 0) break;
       html = null;
     } catch (e) {
@@ -47,29 +44,12 @@ async function playGame(idx) {
     }
   }
 
-  // 2. Fallback: Puter.js
-  if (!html) {
-    var puterModels = ['gpt-4o-mini', 'claude-3-5-haiku-20241022', 'gemini-2.0-flash'];
-    for (var p = 0; p < puterModels.length; p++) {
-      document.getElementById('play-loading-model').textContent = puterModels[p] + ' (Puter fallback)';
-      document.getElementById('play-loading-sub').textContent = 'Trying ' + puterModels[p] + '...';
-      try {
-        html = await callPuterChat(prompt, puterModels[p]);
-        if (html && html.length > 500 && html.indexOf('<') >= 0) break;
-        html = null;
-      } catch (e) {
-        console.warn(puterModels[p] + ' failed:', e);
-        html = null;
-      }
-    }
-  }
-
   document.getElementById('play-loading').style.display = 'none';
   document.getElementById('play-iframe').srcdoc = html ? cleanHTML(html) : themedFallbackGame(game.name);
 }
 
-// NVIDIA API via CORS proxy (streaming)
-async function callNvidia(prompt, model) {
+// Call local proxy /api/chat (streaming SSE)
+async function callLocalProxy(prompt, model) {
   var payload = {
     model: model.id,
     messages: [{ role: 'user', content: prompt }],
@@ -80,17 +60,13 @@ async function callNvidia(prompt, model) {
     chat_template_kwargs: model.tkw
   };
 
-  var res = await fetch(NV_URL, {
+  var res = await fetch('/api/chat', {
     method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + NV_KEY,
-      'Content-Type': 'application/json',
-      'Accept': 'text/event-stream'
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
 
-  if (!res.ok) throw new Error('NVIDIA ' + res.status);
+  if (!res.ok) throw new Error('Proxy returned ' + res.status);
 
   var reader = res.body.getReader();
   var decoder = new TextDecoder();
@@ -122,21 +98,6 @@ async function callNvidia(prompt, model) {
   return result;
 }
 
-// Puter.js fallback
-async function callPuterChat(prompt, modelId) {
-  if (typeof puter === 'undefined' || !puter.ai) throw new Error('Puter not loaded');
-  document.getElementById('play-loading-sub').textContent = 'Generating with ' + modelId + '...';
-  var res = await puter.ai.chat(prompt, { model: modelId });
-  var text = '';
-  if (typeof res === 'string') text = res;
-  else if (res && res.message && res.message.content) {
-    if (Array.isArray(res.message.content)) {
-      for (var i = 0; i < res.message.content.length; i++) if (res.message.content[i].type === 'text') text += res.message.content[i].text;
-    } else text = res.message.content;
-  }
-  return text;
-}
-
 function cleanHTML(h) {
   h = h.replace(/```html\s*/gi, '').replace(/```\s*/g, '');
   var s = h.indexOf('<!DOCTYPE'); if (s < 0) s = h.indexOf('<!doctype'); if (s < 0) s = h.indexOf('<html');
@@ -149,11 +110,7 @@ function cleanHTML(h) {
 function themedFallbackGame(name) {
   var hash = 0;
   for (var i = 0; i < name.length; i++) hash = ((hash << 5) - hash) + name.charCodeAt(i);
-  var hue = Math.abs(hash) % 360;
-  var bg = 'hsl(' + hue + ',20%,8%)';
-  var pc = 'hsl(' + hue + ',70%,55%)';
-  var ac = 'hsl(' + ((hue + 120) % 360) + ',70%,55%)';
-  var bc = 'hsl(' + ((hue + 60) % 360) + ',80%,60%)';
+  var hue = Math.abs(hash) % 360, bg = 'hsl(' + hue + ',20%,8%)', pc = 'hsl(' + hue + ',70%,55%)', ac = 'hsl(' + ((hue+120)%360) + ',70%,55%)', bc = 'hsl(' + ((hue+60)%360) + ',80%,60%)';
 
   return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' + name + '</title>' +
     '<style>*{margin:0;padding:0}body{overflow:hidden;background:' + bg + '}canvas{display:block}</style></head>' +
@@ -163,29 +120,24 @@ function themedFallbackGame(name) {
     'var W=c.width,H=c.height,px=W/2,py=H/2,pa=0,score=0,hp=100,maxHp=100,wave=1,kills=0,' +
     'enemies=[],bullets=[],particles=[],pickups=[],keys={},started=false,dead=false,cooldown=0,special=30,maxSpecial=30,' +
     'mx=W/2,my=H/2,camX=0,camY=0,tick=0;' +
-    'var TITLE="' + name.replace(/"/g, '\\"') + '";' +
-    'var PCOL="' + pc + '",ACOL="' + ac + '",BCOL="' + bc + '";' +
+    'var TITLE="' + name.replace(/"/g,'\\"') + '",PCOL="' + pc + '",ACOL="' + ac + '",BCOL="' + bc + '";' +
     'addEventListener("keydown",function(e){keys[e.key.toLowerCase()]=true;' +
     'if(e.key==="Enter"&&(!started||dead)){started=true;dead=false;hp=maxHp;score=0;wave=1;kills=0;enemies=[];bullets=[];particles=[];pickups=[];special=maxSpecial;px=W/2;py=H/2}' +
-    'if(e.key===" "&&started&&!dead&&special>=maxSpecial){special=0;for(var i=0;i<16;i++){var a=Math.PI*2*i/16;bullets.push({x:px,y:py,dx:Math.cos(a)*10,dy:Math.sin(a)*10,life:30,sp:true})}addP(px,py,ACOL,20)}' +
-    'e.preventDefault()});' +
+    'if(e.key===" "&&started&&!dead&&special>=maxSpecial){special=0;for(var i=0;i<16;i++){var a=Math.PI*2*i/16;bullets.push({x:px,y:py,dx:Math.cos(a)*10,dy:Math.sin(a)*10,life:30,sp:true})}addP(px,py,ACOL,20)}e.preventDefault()});' +
     'addEventListener("keyup",function(e){keys[e.key.toLowerCase()]=false});' +
     'addEventListener("mousemove",function(e){mx=e.clientX;my=e.clientY});' +
-    'addEventListener("click",function(e){if(!started||dead||cooldown>0)return;cooldown=8;' +
-    'var a=Math.atan2(my-H/2,mx-W/2);bullets.push({x:px,y:py,dx:Math.cos(a)*12,dy:Math.sin(a)*12,life:50,sp:false});addP(px,py,BCOL,3)});' +
+    'addEventListener("click",function(e){if(!started||dead||cooldown>0)return;cooldown=8;var a=Math.atan2(my-H/2,mx-W/2);bullets.push({x:px,y:py,dx:Math.cos(a)*12,dy:Math.sin(a)*12,life:50,sp:false});addP(px,py,BCOL,3)});' +
     'function addP(x,y,col,n){for(var i=0;i<n;i++){var a=Math.random()*Math.PI*2,s=Math.random()*4+1;particles.push({x:x,y:y,dx:Math.cos(a)*s,dy:Math.sin(a)*s,life:20+Math.random()*20,col:col,sz:Math.random()*3+1})}}' +
     'function spawnE(){var a=Math.random()*Math.PI*2,d=600,ex=px+Math.cos(a)*d,ey=py+Math.sin(a)*d,t=Math.random();' +
-    'if(t<0.6)enemies.push({x:ex,y:ey,hp:3+wave,mhp:3+wave,sz:10+wave,spd:1.5+wave*0.15,col:"hsl("+((Math.random()*60+' + hue + ')%360)+",60%,45%)",type:0,dmg:1});' +
-    'else if(t<0.85)enemies.push({x:ex,y:ey,hp:6+wave*2,mhp:6+wave*2,sz:16+wave,spd:0.8,col:"hsl(' + ((hue+180)%360) + ',50%,35%)",type:1,dmg:2});' +
-    'else enemies.push({x:ex,y:ey,hp:2+wave,mhp:2+wave,sz:8,spd:2.5+wave*0.2,col:"hsl(' + ((hue+90)%360) + ',70%,55%)",type:2,dmg:1})}' +
-    'function spawnPk(x,y){if(Math.random()<0.3)pickups.push({x:x,y:y,type:Math.random()<0.5?0:1,life:300})}' +
+    'if(t<.6)enemies.push({x:ex,y:ey,hp:3+wave,mhp:3+wave,sz:10+wave,spd:1.5+wave*.15,col:"hsl("+((Math.random()*60+' + hue + ')%360)+",60%,45%)",type:0,dmg:1});' +
+    'else if(t<.85)enemies.push({x:ex,y:ey,hp:6+wave*2,mhp:6+wave*2,sz:16+wave,spd:.8,col:"hsl(' + ((hue+180)%360) + ',50%,35%)",type:1,dmg:2});' +
+    'else enemies.push({x:ex,y:ey,hp:2+wave,mhp:2+wave,sz:8,spd:2.5+wave*.2,col:"hsl(' + ((hue+90)%360) + ',70%,55%)",type:2,dmg:1})}' +
+    'function spawnPk(x,y){if(Math.random()<.3)pickups.push({x:x,y:y,type:Math.random()<.5?0:1,life:300})}' +
     'var stars=[];for(var i=0;i<100;i++)stars.push({x:Math.random()*3e3-1500,y:Math.random()*3e3-1500,s:Math.random()*1.5+.5});' +
     'function loop(){requestAnimationFrame(loop);W=c.width;H=c.height;g.fillStyle="' + bg + '";g.fillRect(0,0,W,H);' +
-    'if(!started){g.save();g.textAlign="center";g.fillStyle=PCOL;g.font="bold 32px monospace";g.fillText(TITLE,W/2,H/2-50);' +
-    'g.fillStyle="#c7d5e0";g.font="16px monospace";g.fillText("Press ENTER to start",W/2,H/2);g.fillText("WASD / Click / Space",W/2,H/2+30);g.restore();return}' +
-    'if(dead){g.save();g.textAlign="center";g.fillStyle="#e74c3c";g.font="bold 28px monospace";g.fillText("GAME OVER",W/2,H/2-30);' +
-    'g.fillStyle="#c7d5e0";g.font="18px monospace";g.fillText("Score: "+score+" | Wave: "+wave,W/2,H/2+10);g.fillText("ENTER to restart",W/2,H/2+45);g.restore();return}' +
-    'tick++;if(cooldown>0)cooldown--;if(special<maxSpecial)special+=0.05;' +
+    'if(!started){g.textAlign="center";g.fillStyle=PCOL;g.font="bold 32px monospace";g.fillText(TITLE,W/2,H/2-50);g.fillStyle="#c7d5e0";g.font="16px monospace";g.fillText("Press ENTER to start",W/2,H/2);g.fillText("WASD / Click / Space",W/2,H/2+30);return}' +
+    'if(dead){g.textAlign="center";g.fillStyle="#e74c3c";g.font="bold 28px monospace";g.fillText("GAME OVER",W/2,H/2-30);g.fillStyle="#c7d5e0";g.font="18px monospace";g.fillText("Score:"+score+" Wave:"+wave,W/2,H/2+10);g.fillText("ENTER restart",W/2,H/2+45);return}' +
+    'tick++;if(cooldown>0)cooldown--;if(special<maxSpecial)special+=.05;' +
     'var spd=4;if(keys.w||keys.arrowup)py-=spd;if(keys.s||keys.arrowdown)py+=spd;if(keys.a||keys.arrowleft)px-=spd;if(keys.d||keys.arrowright)px+=spd;' +
     'pa=Math.atan2(my-H/2,mx-W/2);camX+=(px-W/2-camX)*.1;camY+=(py-H/2-camY)*.1;' +
     'if(tick%Math.max(15,60-wave*3)===0)spawnE();if(kills>=5+wave*3){wave++;kills=0;maxHp+=5;hp=Math.min(hp+20,maxHp);addP(px,py,"#fff",15)}' +
@@ -204,8 +156,7 @@ function themedFallbackGame(name) {
     'g.fillStyle="#c7d5e0";g.font="10px monospace";g.textAlign="left";g.fillText("HP:"+Math.ceil(hp)+"/"+maxHp,14,48);g.fillText("Wave:"+wave,90,48);g.textAlign="right";g.fillText("Score:"+score,214,48);' +
     'var mmx=W-70,mmy=10;g.fillStyle="rgba(0,0,0,.5)";g.fillRect(mmx,mmy,60,60);g.fillStyle=PCOL;g.fillRect(mmx+29,mmy+29,3,3);' +
     'for(var i=0;i<enemies.length;i++){var ex=(enemies[i].x-px)/20+30,ey=(enemies[i].y-py)/20+30;if(ex>0&&ex<60&&ey>0&&ey<60){g.fillStyle=enemies[i].col;g.fillRect(mmx+ex,mmy+ey,2,2)}}' +
-    '}loop();' +
-    '<\/script></body></html>';
+    '}loop();<\/script></body></html>';
 }
 
 function togglePlayFullscreen() {
