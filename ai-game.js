@@ -38,19 +38,22 @@ async function playGame(idx) {
   var prompt = buildFullPrompt(game.name, gameInfo);
   var system = 'You make fun 2D HTML5 canvas games. Output ONLY the HTML code. No markdown, no explanation.';
 
-  // 1. Try Groq first (ultra-fast, 5-10s)
-  updateLoading('Groq (fast)', 'Generating...');
-  try {
-    html = await callGroqWithTimeout(system, prompt, 'llama-3.3-70b-versatile', 30000);
-    if (html && html.length > 500 && html.indexOf('<') >= 0) {
-      console.log('Groq success! (' + html.length + ' chars)');
-    } else {
-      console.warn('Groq: response too short');
+  // 1. Try Groq (ultra-fast LPU, best models first)
+  var groqModels = ['meta-llama/llama-4-scout-17b-16e-instruct', 'qwen-qwq-32b', 'deepseek-r1-distill-llama-70b', 'llama-3.3-70b-versatile'];
+  for (var g = 0; g < groqModels.length; g++) {
+    var gName = groqModels[g].split('/').pop().split('-').slice(0,3).join('-');
+    updateLoading('Groq: ' + gName, 'Generating...');
+    try {
+      html = await callGroqWithTimeout(system, prompt, groqModels[g], 30000);
+      if (html && html.length > 500 && html.indexOf('<') >= 0) {
+        console.log('Groq ' + gName + ' success! (' + html.length + ' chars)');
+        break;
+      }
+      html = null;
+    } catch (e) {
+      console.warn('Groq ' + gName + ':', e.message);
       html = null;
     }
-  } catch (e) {
-    console.warn('Groq failed:', e.message);
-    html = null;
   }
 
   // 2. Fallback: OpenRouter free models
