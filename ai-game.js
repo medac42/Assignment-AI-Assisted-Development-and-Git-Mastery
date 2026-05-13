@@ -31,9 +31,10 @@ async function playGame(idx) {
 
   // g4f.space via local proxy (free, no API key)
   var g4fAttempts = [
+    { provider: 'nvidia', model: 'deepseek-ai/deepseek-r1' },
+    { provider: 'nvidia', model: 'google/gemma-3-27b-it' },
     { provider: 'auto', model: 'gpt-4o' },
     { provider: 'pollinations', model: 'openai' },
-    { provider: 'pollinations', model: 'claude-hybridspace' },
     { provider: 'gemini', model: 'gemini-2.0-flash' },
     { provider: 'groq', model: 'llama-3.3-70b-versatile' }
   ];
