@@ -29,18 +29,42 @@ async function playGame(idx) {
   var prompt = buildGamePrompt(game.name);
   var html = null;
 
-  // Try each NVIDIA model via local proxy
-  for (var m = 0; m < NV_MODELS.length; m++) {
-    var model = NV_MODELS[m];
-    document.getElementById('play-loading-model').textContent = model.name + (m > 0 ? ' (fallback)' : '');
-    document.getElementById('play-loading-sub').textContent = 'Connecting to ' + model.name + '...';
-    try {
-      html = await callLocalProxy(prompt, model);
-      if (html && html.length > 500 && html.indexOf('<') >= 0) break;
-      html = null;
-    } catch (e) {
-      console.warn(model.name + ' failed:', e);
-      html = null;
+  // 1. Try Puter.js from browser (works with VPN extensions)
+  if (typeof puter !== 'undefined' && puter.ai && puter.ai.chat) {
+    var puterModels = ['gpt-4o-mini', 'claude-3-5-haiku-20241022', 'gemini-2.0-flash'];
+    for (var p = 0; p < puterModels.length; p++) {
+      document.getElementById('play-loading-model').textContent = puterModels[p] + ' (Puter.js)';
+      document.getElementById('play-loading-sub').textContent = 'Generating with ' + puterModels[p] + '...';
+      try {
+        var res = await puter.ai.chat(prompt, { model: puterModels[p] });
+        var text = '';
+        if (typeof res === 'string') text = res;
+        else if (res && res.message && res.message.content) {
+          if (Array.isArray(res.message.content)) {
+            for (var i = 0; i < res.message.content.length; i++) if (res.message.content[i].type === 'text') text += res.message.content[i].text;
+          } else text = res.message.content;
+        }
+        if (text && text.length > 500 && text.indexOf('<') >= 0) { html = text; break; }
+      } catch (e) {
+        console.warn('Puter ' + puterModels[p] + ' failed:', e);
+      }
+    }
+  }
+
+  // 2. Fallback: local proxy -> NVIDIA API
+  if (!html) {
+    for (var m = 0; m < NV_MODELS.length; m++) {
+      var model = NV_MODELS[m];
+      document.getElementById('play-loading-model').textContent = model.name + ' (NVIDIA proxy)';
+      document.getElementById('play-loading-sub').textContent = 'Connecting to ' + model.name + '...';
+      try {
+        html = await callLocalProxy(prompt, model);
+        if (html && html.length > 500 && html.indexOf('<') >= 0) break;
+        html = null;
+      } catch (e) {
+        console.warn(model.name + ' failed:', e);
+        html = null;
+      }
     }
   }
 
