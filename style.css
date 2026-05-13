@@ -168,6 +168,8 @@ img{display:block}a{color:var(--text-light);text-decoration:none}
 .play-iframe{flex:1;width:100%;border:none;background:#000}
 .play-loading{position:absolute;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:10}
 .play-loading-inner{text-align:center}
+.play-loading-logo{max-width:320px;width:80%;border-radius:8px;margin-bottom:20px;box-shadow:0 4px 24px rgba(103,193,245,.3);animation:logoPulse 2s ease-in-out infinite}
+@keyframes logoPulse{0%,100%{opacity:.85;transform:scale(1)}50%{opacity:1;transform:scale(1.02)}}
 .play-loading-title{font-size:1rem;color:var(--text-white);margin-top:12px;font-weight:500}
 .play-loading-sub{font-size:.72rem;color:var(--text-muted);margin-top:4px}
 .play-loading-model{font-size:.65rem;color:var(--blue-light);margin-top:8px;font-family:monospace}

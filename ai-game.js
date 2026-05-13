@@ -20,6 +20,20 @@ async function playGame(idx) {
     } catch (e) { console.warn('Steam info fetch failed:', e); }
   }
 
+  // Show game logo in loading screen
+  var logoEl = document.getElementById('play-loading-logo');
+  if (game.steamAppID) {
+    logoEl.src = 'https://cdn.cloudflare.steamstatic.com/steam/apps/' + game.steamAppID + '/header.jpg';
+    logoEl.style.display = 'block';
+    logoEl.onerror = function() { logoEl.style.display = 'none'; };
+  } else if (game.image) {
+    logoEl.src = game.image;
+    logoEl.style.display = 'block';
+    logoEl.onerror = function() { logoEl.style.display = 'none'; };
+  } else {
+    logoEl.style.display = 'none';
+  }
+
   var html = null;
   var prompt = buildFullPrompt(game.name, gameInfo);
   var system = 'You are an expert HTML5 game developer who knows every Steam game. ' +
@@ -27,16 +41,6 @@ async function playGame(idx) {
     'The mini-game MUST capture the CORE GAMEPLAY LOOP of the original. ' +
     'USE REAL ELEMENTS: real character names, enemy names, item names, weapon names from the game. ' +
     'Output ONLY a complete HTML file. No markdown, no explanation, no code fences.';
-
-  // Launch loading screen generation in parallel (fast model)
-  var loadingScreenPromise = generateLoadingScreen(game.name, gameInfo);
-
-  // Show AI loading screen in iframe while game generates
-  loadingScreenPromise.then(function(loadHtml) {
-    if (loadHtml && loadHtml.length > 100 && !html) {
-      document.getElementById('play-iframe').srcdoc = cleanHTML(loadHtml);
-    }
-  }).catch(function() {});
 
   // Try models (one call each, with 90s timeout)
   var models = [
@@ -69,19 +73,8 @@ async function playGame(idx) {
   document.getElementById('play-iframe').srcdoc = valid ? cleanHTML(html) : themedFallbackGame(game.name);
 }
 
-// Generate a themed loading screen with a fast model (runs in parallel)
-async function generateLoadingScreen(name, gameInfo) {
-  var ctx = buildGameContext(name, gameInfo);
-  var loadPrompt = 'Create a simple HTML loading screen for ' + ctx + '. ' +
-    'Show the game title "' + name + '" in large stylized text with a themed color scheme. ' +
-    'Add an animated loading spinner or progress bar. ' +
-    'Show "Generating your game..." text with a pulsing animation. ' +
-    'Add themed particle effects or floating elements in the background related to the game. ' +
-    'Canvas-based animation. Dark background. Make it look premium. ' +
-    'Start with <!DOCTYPE html>. No markdown.';
-  var loadSystem = 'You create beautiful animated HTML loading screens. Output ONLY HTML code. No markdown.';
-  return await callAIWithTimeout(loadSystem, loadPrompt, 'poolside/laguna-xs.2:free', 15000);
-}
+
+
 
 // Build context from Steam data
 function buildGameContext(name, info) {
