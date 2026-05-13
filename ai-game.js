@@ -29,26 +29,32 @@ async function playGame(idx) {
   var prompt = buildGamePrompt(game.name);
   var html = null;
 
-  // g4f.space via local proxy (free, no API key)
-  var g4fAttempts = [
-    { provider: 'nvidia', model: 'deepseek-ai/deepseek-r1' },
-    { provider: 'nvidia', model: 'google/gemma-3-27b-it' },
-    { provider: 'auto', model: 'gpt-4o' },
-    { provider: 'pollinations', model: 'openai' },
-    { provider: 'gemini', model: 'gemini-2.0-flash' },
-    { provider: 'groq', model: 'llama-3.3-70b-versatile' }
-  ];
-  for (var g = 0; g < g4fAttempts.length; g++) {
-    var attempt = g4fAttempts[g];
-    document.getElementById('play-loading-model').textContent = attempt.provider + '/' + attempt.model;
-    document.getElementById('play-loading-sub').textContent = 'Connecting to g4f ' + attempt.provider + '...';
-    try {
-      html = await callLocalProxy(prompt, attempt.provider, attempt.model);
-      if (html && html.length > 500 && html.indexOf('<') >= 0) break;
-      html = null;
-    } catch (e) {
-      console.warn('g4f ' + attempt.provider + '/' + attempt.model + ':', e);
-      html = null;
+  // 1. Puter.js FREE models (no credits needed)
+  if (typeof puter !== 'undefined' && puter.ai && puter.ai.chat) {
+    var freeModels = [
+      'qwen/qwen3.6-plus-preview:free',
+      'poolside/laguna-m.1:free',
+      'poolside/laguna-xs.2:free',
+      'baidu/cobuddy:free',
+      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free'
+    ];
+    for (var f = 0; f < freeModels.length; f++) {
+      var modelName = freeModels[f].split('/').pop().split(':')[0];
+      document.getElementById('play-loading-model').textContent = modelName + ' (FREE)';
+      document.getElementById('play-loading-sub').textContent = 'Generating with ' + modelName + '...';
+      try {
+        var res = await puter.ai.chat(prompt, { model: freeModels[f] });
+        var text = '';
+        if (typeof res === 'string') text = res;
+        else if (res && res.message && res.message.content) {
+          if (Array.isArray(res.message.content)) {
+            for (var i = 0; i < res.message.content.length; i++) if (res.message.content[i].type === 'text') text += res.message.content[i].text;
+          } else text = res.message.content;
+        }
+        if (text && text.length > 500 && text.indexOf('<') >= 0) { html = text; break; }
+      } catch (e) {
+        console.warn('Puter FREE ' + freeModels[f] + ':', e);
+      }
     }
   }
 
