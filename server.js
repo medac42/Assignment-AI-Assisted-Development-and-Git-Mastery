@@ -13,8 +13,8 @@ const MIME = {
   '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.json': 'application/json'
 };
 
-// Proxy to g4f.space
-function proxyToG4F(body, res) {
+// Proxy to Pollinations.ai
+function proxyToAPI(body, res) {
   let parsed;
   try { parsed = JSON.parse(body); } catch (e) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -22,19 +22,15 @@ function proxyToG4F(body, res) {
     return;
   }
 
-  const provider = parsed.provider || 'nvidia';
   delete parsed.provider;
-
-  // Build g4f.space URL
-  const g4fPath = '/api/' + provider + '/chat/completions';
   const payload = JSON.stringify(parsed);
 
-  console.log('Proxying to g4f.space' + g4fPath + ' model=' + parsed.model);
+  console.log('Proxying to text.pollinations.ai model=' + parsed.model);
 
   const options = {
-    hostname: 'g4f.space',
+    hostname: 'text.pollinations.ai',
     port: 443,
-    path: g4fPath,
+    path: '/openai',
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -120,7 +116,7 @@ const server = http.createServer((req, res) => {
   if (req.url === '/api/chat' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => body += chunk);
-    req.on('end', () => proxyToG4F(body, res));
+    req.on('end', () => proxyToAPI(body, res));
     return;
   }
 
@@ -137,5 +133,5 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log('SteamVault at http://localhost:' + PORT);
-  console.log('AI proxy at /api/chat -> g4f.space');
+  console.log('AI proxy at /api/chat -> text.pollinations.ai');
 });

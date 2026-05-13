@@ -26,34 +26,33 @@ async function playGame(idx) {
   document.getElementById('play-loading-model').textContent = '';
   document.getElementById('play-iframe').srcdoc = '';
 
-  var prompt = buildGamePrompt(game.name);
-  var html = null;
+  // 1. Pollinations.ai — 100% free, no key, CORS enabled
+  var pollinModels = ['openai', 'mistral', 'llama', 'deepseek'];
+  for (var p = 0; p < pollinModels.length; p++) {
+    document.getElementById('play-loading-model').textContent = pollinModels[p] + ' (Pollinations)';
+    document.getElementById('play-loading-sub').textContent = 'Generating with ' + pollinModels[p] + '...';
+    try {
+      html = await callPollinations(prompt, pollinModels[p]);
+      if (html && html.length > 500 && html.indexOf('<') >= 0) break;
+      html = null;
+    } catch (e) {
+      console.warn('Pollinations ' + pollinModels[p] + ':', e);
+      html = null;
+    }
+  }
 
-  // 1. Puter.js FREE models (no credits needed)
-  if (typeof puter !== 'undefined' && puter.ai && puter.ai.chat) {
-    var freeModels = [
-      'qwen/qwen3.6-plus-preview:free',
-      'poolside/laguna-m.1:free',
-      'poolside/laguna-xs.2:free',
-      'baidu/cobuddy:free',
-      'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free'
-    ];
-    for (var f = 0; f < freeModels.length; f++) {
-      var modelName = freeModels[f].split('/').pop().split(':')[0];
-      document.getElementById('play-loading-model').textContent = modelName + ' (FREE)';
-      document.getElementById('play-loading-sub').textContent = 'Generating with ' + modelName + '...';
+  // 2. Fallback: Pollinations via local proxy (if CORS blocked)
+  if (!html) {
+    for (var p2 = 0; p2 < pollinModels.length; p2++) {
+      document.getElementById('play-loading-model').textContent = pollinModels[p2] + ' (proxy)';
+      document.getElementById('play-loading-sub').textContent = 'Trying proxy for ' + pollinModels[p2] + '...';
       try {
-        var res = await puter.ai.chat(prompt, { model: freeModels[f] });
-        var text = '';
-        if (typeof res === 'string') text = res;
-        else if (res && res.message && res.message.content) {
-          if (Array.isArray(res.message.content)) {
-            for (var i = 0; i < res.message.content.length; i++) if (res.message.content[i].type === 'text') text += res.message.content[i].text;
-          } else text = res.message.content;
-        }
-        if (text && text.length > 500 && text.indexOf('<') >= 0) { html = text; break; }
+        html = await callPollinationsProxy(prompt, pollinModels[p2]);
+        if (html && html.length > 500 && html.indexOf('<') >= 0) break;
+        html = null;
       } catch (e) {
-        console.warn('Puter FREE ' + freeModels[f] + ':', e);
+        console.warn('Proxy pollinations ' + pollinModels[p2] + ':', e);
+        html = null;
       }
     }
   }
@@ -62,13 +61,41 @@ async function playGame(idx) {
   document.getElementById('play-iframe').srcdoc = html ? cleanHTML(html) : themedFallbackGame(game.name);
 }
 
-// Call local proxy -> g4f.space
-async function callLocalProxy(prompt, provider, model) {
+// Direct browser call to Pollinations.ai (CORS enabled, free)
+async function callPollinations(prompt, model) {
   var payload = {
-    model: model || 'gpt-4o',
-    messages: [{ role: 'user', content: prompt }],
-    temperature: 0.9,
-    provider: provider
+    messages: [
+      { role: 'system', content: 'You are an expert game developer. Output ONLY valid HTML. No markdown, no explanation.' },
+      { role: 'user', content: prompt }
+    ],
+    model: model,
+    seed: Math.floor(Math.random() * 100000)
+  };
+
+  var res = await fetch('https://text.pollinations.ai/openai', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  if (!res.ok) throw new Error('Pollinations returned ' + res.status);
+  var json = await res.json();
+  if (json.choices && json.choices[0] && json.choices[0].message) {
+    return json.choices[0].message.content;
+  }
+  return '';
+}
+
+// Pollinations via local proxy (if CORS fails)
+async function callPollinationsProxy(prompt, model) {
+  var payload = {
+    messages: [
+      { role: 'system', content: 'You are an expert game developer. Output ONLY valid HTML. No markdown, no explanation.' },
+      { role: 'user', content: prompt }
+    ],
+    model: model,
+    seed: Math.floor(Math.random() * 100000),
+    provider: 'pollinations'
   };
 
   var res = await fetch('/api/chat', {
@@ -78,40 +105,11 @@ async function callLocalProxy(prompt, provider, model) {
   });
 
   if (!res.ok) throw new Error('Proxy returned ' + res.status);
-
-  // Try to read as streaming or plain JSON
-  var text = await res.text();
-
-  // Parse SSE if it looks like SSE
-  if (text.indexOf('data:') >= 0) {
-    var result = '';
-    var lines = text.split('\n');
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i].trim();
-      if (!line.startsWith('data:')) continue;
-      var data = line.substring(5).trim();
-      if (data === '[DONE]') continue;
-      try {
-        var p = JSON.parse(data);
-        if (p.choices && p.choices[0] && p.choices[0].delta && p.choices[0].delta.content) {
-          result += p.choices[0].delta.content;
-        } else if (p.choices && p.choices[0] && p.choices[0].message && p.choices[0].message.content) {
-          result += p.choices[0].message.content;
-        }
-      } catch (e) {}
-    }
-    document.getElementById('play-loading-sub').textContent = 'Received ' + Math.round(result.length / 1024) + 'KB';
-    return result;
+  var json = await res.json();
+  if (json.choices && json.choices[0] && json.choices[0].message) {
+    return json.choices[0].message.content;
   }
-
-  // Plain JSON response
-  try {
-    var json = JSON.parse(text);
-    if (json.choices && json.choices[0] && json.choices[0].message) {
-      return json.choices[0].message.content;
-    }
-  } catch (e) {}
-  return text;
+  return '';
 }
 
 function cleanHTML(h) {
