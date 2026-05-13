@@ -15,6 +15,7 @@ function getImg(d) { return d.steamAppID ? 'https://cdn.cloudflare.steamstatic.c
 function getCapsule(d) { return d.steamAppID ? 'https://cdn.cloudflare.steamstatic.com/steam/apps/' + d.steamAppID + '/capsule_616x353.jpg' : getImg(d); }
 function getSmall(d) { return d.steamAppID ? 'https://cdn.cloudflare.steamstatic.com/steam/apps/' + d.steamAppID + '/capsule_231x87.jpg' : (d.thumb || ''); }
 function getSS(d, n) { return d.steamAppID ? 'https://cdn.cloudflare.steamstatic.com/steam/apps/' + d.steamAppID + '/ss_' + ['04','05','06','07'][n || 0] + '.jpg' : ''; }
+// loadImage kept as fallback, loadImageWithAI is in img-gen.js
 function loadImage(img, srcs) { if (!srcs || !srcs.length) { img.style.background = 'linear-gradient(135deg,#1b2838,#2a475e)'; return; } var i = 0; function go() { if (i >= srcs.length) { img.style.background = 'linear-gradient(135deg,#1b2838,#2a475e)'; return; } img.src = srcs[i]; i++; } img.onerror = go; go(); }
 
 // API
@@ -81,9 +82,9 @@ function showFeaturedSlide(idx) {
     '<div class="featured-bottom">' + (disc > 20 ? '<span class="featured-tag">Top Seller</span>' : '') +
     '<div class="featured-price">' + price + '</div></div></div></div>' +
     '<div class="carousel-dots">' + dots + '</div>';
-  loadImage(document.getElementById('feat-img'), [getCapsule(d), getImg(d), d.thumb]);
-  loadImage(document.getElementById('feat-th1'), [getImg(d), d.thumb]);
-  loadImage(document.getElementById('feat-th2'), [d.thumb, getImg(d)]);
+  loadImageWithAI(document.getElementById('feat-img'), [getCapsule(d), getImg(d), d.thumb], d.title);
+  loadImageWithAI(document.getElementById('feat-th1'), [getImg(d), d.thumb], d.title);
+  loadImageWithAI(document.getElementById('feat-th2'), [d.thumb, getImg(d)], d.title);
 }
 function goFeatured(i) { state.featIdx = i; showFeaturedSlide(i); }
 
@@ -123,7 +124,7 @@ function renderGameGrid(deals) {
       '<div class="game-row-price-area">' + priceHTML + '</div>';
 
     grid.appendChild(row);
-    loadImage(row.querySelector('.game-row-img'), [getSmall(deal), getImg(deal), deal.thumb]);
+    loadImageWithAI(row.querySelector('.game-row-img'), [getSmall(deal), getImg(deal), deal.thumb], deal.title);
 
     // Hover popup
     row.addEventListener('mouseenter', function(e) { showHoverPopup(deal, e); });
@@ -162,9 +163,9 @@ function showHoverPopup(deal, e) {
       '<div class="popup-screenshots"><img id="popup-ss1" alt=""><img id="popup-ss2" alt=""></div>' +
       priceHTML + '</div>';
 
-    loadImage(document.getElementById('popup-main-img'), [getImg(deal), getCapsule(deal), deal.thumb]);
-    loadImage(document.getElementById('popup-ss1'), [getCapsule(deal), deal.thumb]);
-    loadImage(document.getElementById('popup-ss2'), [deal.thumb, getImg(deal)]);
+    loadImageWithAI(document.getElementById('popup-main-img'), [getImg(deal), getCapsule(deal), deal.thumb], deal.title);
+    loadImageWithAI(document.getElementById('popup-ss1'), [getCapsule(deal), deal.thumb], deal.title);
+    loadImageWithAI(document.getElementById('popup-ss2'), [deal.thumb, getImg(deal)], deal.title);
 
     positionPopup(e);
     popup.classList.add('visible');
@@ -192,7 +193,7 @@ function openGameModal(deal) {
   var release = deal.releaseDate > 0 ? new Date(deal.releaseDate * 1000).toLocaleDateString('es-ES') : 'Unknown';
   var rc = !deal.steamRatingText ? 'neutral' : (deal.steamRatingText.indexOf('Positive') >= 0 ? 'positive' : (deal.steamRatingText.indexOf('Mixed') >= 0 ? 'mixed' : 'negative'));
 
-  loadImage(document.getElementById('modal-hero'), [getCapsule(deal), getImg(deal), deal.thumb]);
+  loadImageWithAI(document.getElementById('modal-hero'), [getCapsule(deal), getImg(deal), deal.thumb], deal.title);
   document.getElementById('modal-title').textContent = deal.title;
   document.getElementById('modal-rating-tag').textContent = deal.steamRatingText || 'No Reviews';
   document.getElementById('modal-rating-tag').className = 'modal-rating-tag ' + rc;
@@ -201,8 +202,8 @@ function openGameModal(deal) {
 
   var ss = document.getElementById('modal-screenshots');
   ss.innerHTML = '<img id="mss1" alt=""><img id="mss2" alt="">';
-  loadImage(document.getElementById('mss1'), [getImg(deal), deal.thumb]);
-  loadImage(document.getElementById('mss2'), [deal.thumb, getImg(deal)]);
+  loadImageWithAI(document.getElementById('mss1'), [getImg(deal), deal.thumb], deal.title);
+  loadImageWithAI(document.getElementById('mss2'), [deal.thumb, getImg(deal)], deal.title);
 
   document.getElementById('purchase-title').textContent = 'Buy ' + deal.title;
   var db = document.getElementById('modal-discount');
