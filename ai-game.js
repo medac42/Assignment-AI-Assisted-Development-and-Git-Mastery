@@ -93,21 +93,28 @@ async function playGame(idx) {
   iframe.srcdoc = valid ? cleanHTML(html) : themedFallbackGame(game.name);
 }
 
-
-
-
 function buildFullPrompt(name, gameInfo) {
-  var extra = '';
-  if (gameInfo && gameInfo.short_description) extra = ' (' + gameInfo.short_description + ')';
+  var desc = (gameInfo && gameInfo.short_description) ? gameInfo.short_description : '';
+  var genres = (gameInfo && gameInfo.genres) ? gameInfo.genres : '';
 
-  return 'You know the Steam game "' + name + '"' + extra + '. ' +
-    'Recreate it as a simple 2D canvas version. Not a generic game — recreate what THIS game actually is. ' +
-    'If it is GTA, make an open world driving/crime game. If it is Minecraft, make block placing/mining. ' +
-    'If it is Stardew Valley, make farming with crops. If it is Dark Souls, make tough combat. ' +
-    'Whatever the game is, think about what makes it unique and recreate THAT. ' +
-    'Use real names from the game. Colorful visuals, not plain squares on black. ' +
-    'Title screen with "' + name + '", controls list, and press ENTER to start. Score, game over. Canvas fills viewport. ' +
-    '<!DOCTYPE html>. Single file. No markdown.';
+  return 'Create a 2D HTML5 canvas game that is a FAITHFUL mini recreation of "' + name + '".' +
+    (desc ? ' The game is about: ' + desc + '.' : '') +
+    (genres ? ' Genre: ' + genres + '.' : '') +
+    '\n\nCRITICAL VISUAL REQUIREMENTS — the game MUST look polished:' +
+    '\n- Draw a FULL ENVIRONMENT: floor/ground, walls/sky, background layers with parallax or depth' +
+    '\n- The player must be a DRAWN CHARACTER (stick figure, sprite shape, or detailed polygon), NOT a circle or square' +
+    '\n- All game objects must have LABELS with their names drawn next to them' +
+    '\n- Use the game\'s ACTUAL color palette (dark greens for military, neon for cyberpunk, earthy for survival, etc.)' +
+    '\n- Draw a proper HUD with styled boxes/bars for health, ammo, score — not just plain text' +
+    '\n- Include at least one BACKGROUND DETAIL that moves (clouds, particles, parallax)' +
+    '\n- The title screen must have a STYLED LOGO with shadow/glow effects and themed background art' +
+    '\n\nGAMEPLAY REQUIREMENTS:' +
+    '\n- The gameplay must reflect what "' + name + '" ACTUALLY IS. Use real mechanics from the game.' +
+    '\n- Include at least 3 types of interactive elements specific to this game' +
+    '\n- Controls shown on title screen' +
+    '\n- Game over screen with score and restart' +
+    '\n\nDO NOT make a generic dodge/collect game with circles on a plain background. That is UNACCEPTABLE.' +
+    '\n\nStart with <!DOCTYPE html>. Single complete HTML file. No markdown, no explanation.';
 }
 
 function updateLoading(model, sub) {
