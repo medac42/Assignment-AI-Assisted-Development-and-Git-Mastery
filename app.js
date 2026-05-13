@@ -12,6 +12,8 @@ const state = {
   wallet: 250.00,
   cart: [],
   library: [],
+  wishlist: [],        // Wishlist feature (feature-update branch)
+  currentDeals: [],    // Cached deals for sorting
   currentGame: null,
   searchQuery: '',
 };
@@ -46,6 +48,7 @@ async function loadPopularGames() {
       seen.add(d.title);
       return true;
     });
+    state.currentDeals = unique;
     renderGameGrid(unique);
   } catch (err) {
     console.error('Error loading games:', err);
@@ -82,6 +85,7 @@ async function searchGames() {
       return true;
     });
     document.getElementById('store-subtitle').textContent = `${unique.length} juegos encontrados`;
+    state.currentDeals = unique;
     renderGameGrid(unique);
   } catch (err) {
     console.error('Search error:', err);
@@ -400,6 +404,105 @@ function purchaseCart() {
 }
 
 // ══════════════════════════════════════════════
+//  Wishlist Functions (feature-update)
+// ══════════════════════════════════════════════
+
+/** Toggles the current game in/out of the wishlist */
+function toggleWishlist() {
+  const deal = state.currentGame;
+  if (!deal) return;
+
+  const idx = state.wishlist.findIndex(g => g.gameID === deal.gameID);
+  if (idx !== -1) {
+    state.wishlist.splice(idx, 1);
+    showToast(`"${deal.title}" eliminado de la wishlist.`, 'success');
+  } else {
+    state.wishlist.push({
+      gameID: deal.gameID,
+      name: deal.title,
+      image: getGameImage(deal),
+      price: parseFloat(deal.salePrice),
+      normalPrice: parseFloat(deal.normalPrice),
+      addedDate: new Date().toLocaleDateString('es-ES'),
+    });
+    showToast(`"${deal.title}" añadido a la wishlist! 💜`, 'success');
+  }
+  saveToStorage();
+  updateUI();
+  closeModalForce();
+}
+
+/** Renders the wishlist page */
+function renderWishlist() {
+  const list = document.getElementById('wishlist-list');
+  const subtitle = document.getElementById('wishlist-subtitle');
+  subtitle.textContent = `${state.wishlist.length} juegos`;
+
+  if (state.wishlist.length === 0) {
+    list.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">💜</div>
+        <div class="empty-state-title">Tu wishlist está vacía</div>
+        <p>Marca juegos con el 💜 para guardarlos aquí</p>
+      </div>`;
+    return;
+  }
+
+  list.innerHTML = state.wishlist.map((game, i) => `
+    <div class="library-card">
+      <img class="library-card-img" src="${game.image}" alt="${game.name}" loading="lazy"
+           onerror="this.src='https://placehold.co/140x80/1a1a2e/6366f1?text=No+Img'">
+      <div class="library-card-info">
+        <div class="library-card-title">${game.name}</div>
+        <div class="library-card-date">Añadido: ${game.addedDate} — ${game.price === 0 ? 'Gratis' : game.price.toFixed(2) + '€'}</div>
+      </div>
+      <button onclick="removeFromWishlist(${i})" style="
+        background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.2);
+        color:#a855f7;padding:0.5rem 0.8rem;border-radius:var(--radius-sm);
+        cursor:pointer;font-size:0.8rem;align-self:center;
+      ">💔 Quitar</button>
+    </div>
+  `).join('');
+}
+
+/** Removes a game from the wishlist */
+function removeFromWishlist(index) {
+  const removed = state.wishlist.splice(index, 1);
+  showToast(`"${removed[0].name}" eliminado de la wishlist.`, 'success');
+  saveToStorage();
+  updateUI();
+  renderWishlist();
+}
+
+// ══════════════════════════════════════════════
+//  Sorting Functions (feature-update)
+// ══════════════════════════════════════════════
+
+/** Sorts the currently displayed deals by the selected criteria */
+function sortGames() {
+  const sortBy = document.getElementById('sort-select').value;
+  const deals = [...state.currentDeals];
+
+  switch (sortBy) {
+    case 'price':
+      deals.sort((a, b) => parseFloat(a.salePrice) - parseFloat(b.salePrice));
+      break;
+    case 'title':
+      deals.sort((a, b) => a.title.localeCompare(b.title));
+      break;
+    case 'metacritic':
+      deals.sort((a, b) => (parseInt(b.metacriticScore) || 0) - (parseInt(a.metacriticScore) || 0));
+      break;
+    case 'deal':
+    default:
+      deals.sort((a, b) => parseFloat(b.dealRating || 0) - parseFloat(a.dealRating || 0));
+      break;
+  }
+
+  renderGameGrid(deals);
+}
+
+// ══════════════════════════════════════════════
 //  Utility Functions
 // ══════════════════════════════════════════════
 
@@ -415,6 +518,7 @@ function showPage(page) {
   document.getElementById(`page-${page}`).classList.add('active');
   document.getElementById(`nav-${page}`).classList.add('active');
   if (page === 'library') renderLibrary();
+  if (page === 'wishlist') renderWishlist();
   if (page === 'cart') renderCart();
 }
 
@@ -427,6 +531,10 @@ function updateUI() {
   const libBadge = document.getElementById('library-count');
   libBadge.textContent = state.library.length;
   libBadge.classList.toggle('visible', state.library.length > 0);
+
+  const wishBadge = document.getElementById('wishlist-count');
+  wishBadge.textContent = state.wishlist.length;
+  wishBadge.classList.toggle('visible', state.wishlist.length > 0);
 
   document.getElementById('wallet-amount').textContent = state.wallet.toFixed(2);
 }
@@ -461,16 +569,19 @@ function closeModalForce() {
 //  LocalStorage Persistence
 // ══════════════════════════════════════════════
 
-/** Saves library & wallet to localStorage */
+/** Saves library, wallet & wishlist to localStorage */
 function saveToStorage() {
   localStorage.setItem('steamvault_library', JSON.stringify(state.library));
   localStorage.setItem('steamvault_wallet', JSON.stringify(state.wallet));
+  localStorage.setItem('steamvault_wishlist', JSON.stringify(state.wishlist));
 }
 
-/** Loads library & wallet from localStorage */
+/** Loads library, wallet & wishlist from localStorage */
 function loadFromStorage() {
   const lib = localStorage.getItem('steamvault_library');
   const wallet = localStorage.getItem('steamvault_wallet');
+  const wish = localStorage.getItem('steamvault_wishlist');
   if (lib) state.library = JSON.parse(lib);
   if (wallet) state.wallet = JSON.parse(wallet);
+  if (wish) state.wishlist = JSON.parse(wish);
 }

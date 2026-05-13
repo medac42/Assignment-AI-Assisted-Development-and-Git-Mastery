@@ -25,6 +25,10 @@
         📚 Biblioteca
         <span class="cart-badge" id="library-count"></span>
       </button>
+      <button class="nav-btn" id="nav-wishlist" onclick="showPage('wishlist')">
+        💜 Wishlist
+        <span class="cart-badge" id="wishlist-count"></span>
+      </button>
       <button class="nav-btn" id="nav-cart" onclick="showPage('cart')">
         🛒 Carrito
         <span class="cart-badge" id="cart-count"></span>
@@ -53,6 +57,16 @@
           <button class="search-btn" id="search-btn" onclick="searchGames()">
             🔍 Buscar
           </button>
+          <select id="sort-select" onchange="sortGames()" style="
+            background:var(--bg-card);border:1px solid var(--border-color);color:var(--text-primary);
+            padding:0.75rem 1rem;border-radius:var(--radius-md);font-family:'Inter',sans-serif;
+            font-size:0.85rem;cursor:pointer;outline:none;
+          ">
+            <option value="deal">🏷️ Mejor oferta</option>
+            <option value="price">💰 Menor precio</option>
+            <option value="title">🔤 A-Z</option>
+            <option value="metacritic">⭐ Metacritic</option>
+          </select>
         </div>
       </div>
 
@@ -79,6 +93,15 @@
         <span class="section-subtitle" id="library-subtitle">0 juegos</span>
       </div>
       <div id="library-list" class="library-list"></div>
+    </section>
+
+    <!-- ─── WISHLIST PAGE ─── -->
+    <section class="page-view" id="page-wishlist">
+      <div class="section-header">
+        <h1 class="section-title">💜 Mi Wishlist</h1>
+        <span class="section-subtitle" id="wishlist-subtitle">0 juegos</span>
+      </div>
+      <div id="wishlist-list" class="library-list"></div>
     </section>
 
     <!-- ─── CART PAGE ─── -->
@@ -121,6 +144,9 @@
           <span class="modal-price" id="modal-price"></span>
           <button class="btn-buy" id="modal-buy-btn" onclick="buyFromModal()">
             🛒 Añadir al Carrito
+          </button>
+          <button class="btn-cart" id="modal-wish-btn" onclick="toggleWishlist()" title="Añadir a Wishlist">
+            💜
           </button>
         </div>
       </div>
