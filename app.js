@@ -2,40 +2,50 @@
 const API_BASE = 'https://www.cheapshark.com/api/1.0';
 const state = { wallet: 250, cart: [], library: [], wishlist: [], currentDeals: [], currentGame: null, featIdx: 0, featTimer: null };
 
-document.addEventListener('DOMContentLoaded', () => {
+// Filter out DLCs, editions, bundles — only base games
+var DLC_WORDS = ['dlc', 'edition', 'pack', 'bundle', 'collection', 'season pass', 'upgrade', 'expansion', 'add-on', 'addon', 'soundtrack', 'art book', 'artbook', 'costume', 'skin pack', 'character pack', 'starter pack', 'booster', 'premium', 'gold edition', 'silver edition', 'bronze edition'];
+function isBaseGame(title) {
+  var low = title.toLowerCase();
+  for (var i = 0; i < DLC_WORDS.length; i++) { if (low.indexOf(DLC_WORDS[i]) >= 0) return false; }
+  return true;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
   loadFromStorage(); loadPopularGames(); updateUI();
-  document.getElementById('search-input').addEventListener('keydown', e => { if (e.key === 'Enter') searchGames(); });
+  document.getElementById('search-input').addEventListener('keydown', function(e) { if (e.key === 'Enter') searchGames(); });
 });
 
 // ── API ──
 async function loadPopularGames() {
   showLoader(true);
   try {
-    const r = await fetch(API_BASE + '/deals?pageSize=24&sortBy=Deal%20Rating');
-    const data = await r.json();
-    const seen = new Set();
-    const unique = data.filter(d => { if (seen.has(d.title)) return false; seen.add(d.title); return true; });
-    state.currentDeals = unique;
-    renderFeatured(unique.slice(0, 5));
-    renderGameGrid(unique);
+    var r = await fetch(API_BASE + '/deals?pageSize=60&sortBy=Deal%20Rating');
+    var data = await r.json();
+    var seen = new Set();
+    var unique = data.filter(function(d) { if (seen.has(d.title)) return false; seen.add(d.title); return true; });
+    var games = unique.filter(function(d) { return isBaseGame(d.title); });
+    state.currentDeals = games;
+    renderFeatured(games.slice(0, 5));
+    renderGameGrid(games);
   } catch (e) { showToast('Error loading games.', 'error'); }
   showLoader(false);
 }
 
 async function searchGames() {
-  const q = document.getElementById('search-input').value.trim();
+  var q = document.getElementById('search-input').value.trim();
   if (!q) { loadPopularGames(); document.getElementById('store-title').textContent = 'Special Offers'; return; }
   showLoader(true); document.getElementById('game-grid').innerHTML = '';
   document.getElementById('store-title').textContent = 'Results for "' + q + '"';
   document.getElementById('featured-section').innerHTML = '';
   try {
-    const r = await fetch(API_BASE + '/deals?title=' + encodeURIComponent(q) + '&pageSize=24');
-    const data = await r.json();
-    const seen = new Set();
-    const unique = data.filter(d => { if (seen.has(d.title)) return false; seen.add(d.title); return true; });
-    state.currentDeals = unique;
-    document.getElementById('store-subtitle').textContent = unique.length + ' games found';
-    renderGameGrid(unique);
+    var r = await fetch(API_BASE + '/deals?title=' + encodeURIComponent(q) + '&pageSize=60');
+    var data = await r.json();
+    var seen = new Set();
+    var unique = data.filter(function(d) { if (seen.has(d.title)) return false; seen.add(d.title); return true; });
+    var games = unique.filter(function(d) { return isBaseGame(d.title); });
+    state.currentDeals = games;
+    document.getElementById('store-subtitle').textContent = games.length + ' games found';
+    renderGameGrid(games);
   } catch (e) { showToast('Search error.', 'error'); }
   showLoader(false);
 }
