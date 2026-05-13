@@ -1,14 +1,6 @@
 /* SteamVault — AI Game Generator
-   Uses NVIDIA API (Gemma 4 -> DeepSeek V4 fallback) to generate
-   top-down HTML games based on real game lore and mechanics. */
-
-var NVIDIA_KEY = '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';
-var NVIDIA_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
-
-var AI_MODELS = [
-  { id: 'google/gemma-4-31b-it', name: 'Gemma 4 31B', thinkKey: 'enable_thinking' },
-  { id: 'deepseek-ai/deepseek-v4-flash', name: 'DeepSeek V4 Flash', thinkKey: 'thinking' }
-];
+   Uses Puter.js puter.ai.chat() to generate top-down HTML games.
+   No CORS issues since Puter handles the API calls. */
 
 // Build the prompt for game generation
 function buildGamePrompt(gameName) {
@@ -32,7 +24,7 @@ function buildGamePrompt(gameName) {
     '- The canvas should fill the entire viewport (100vw x 100vh)\n' +
     '- Background should represent an iconic location from the game\n' +
     '- Include mini-map in corner\n\n' +
-    'CRITICAL: Output ONLY the complete HTML file. No explanations, no markdown, no code fences. Start with <!DOCTYPE html> and end with </html>. The entire response must be valid HTML that can be directly rendered in a browser iframe.';
+    'CRITICAL: Output ONLY the complete HTML file. No explanations, no markdown, no code fences. Start with <!DOCTYPE html> and end with </html>.';
 }
 
 // Main function to generate and play a game
@@ -40,29 +32,36 @@ async function playGame(libraryIndex) {
   var game = state.library[libraryIndex];
   if (!game) return;
 
-  // Switch to play page
   showPage('play');
   document.getElementById('play-game-name').textContent = game.name;
   document.getElementById('play-loading').style.display = 'flex';
   document.getElementById('play-loading-title').textContent = 'Generating ' + game.name + '...';
   document.getElementById('play-loading-sub').textContent = 'Analyzing game lore, characters and mechanics via AI';
+  document.getElementById('play-loading-model').textContent = '';
   document.getElementById('play-iframe').srcdoc = '';
 
   var prompt = buildGamePrompt(game.name);
   var html = null;
 
-  // Try each AI model in order
-  for (var m = 0; m < AI_MODELS.length; m++) {
-    var model = AI_MODELS[m];
-    document.getElementById('play-loading-model').textContent = 'Model: ' + model.name + (m > 0 ? ' (fallback)' : '');
+  // Try Puter.js AI chat (no CORS issues)
+  var models = [
+    { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4' },
+    { id: 'gpt-4o', name: 'GPT-4o' },
+    { id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash' },
+    { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet' }
+  ];
+
+  for (var m = 0; m < models.length; m++) {
+    var model = models[m];
+    document.getElementById('play-loading-model').textContent = 'Model: ' + model.name + (m > 0 ? ' (fallback ' + m + ')' : '');
     document.getElementById('play-loading-sub').textContent = 'Connecting to ' + model.name + '...';
 
     try {
-      html = await callNvidiaAPI(prompt, model);
-      if (html && html.indexOf('<') >= 0) break; // Got valid HTML
+      html = await callPuterAI(prompt, model.id);
+      if (html && html.indexOf('<') >= 0 && html.length > 500) break;
       html = null;
     } catch (e) {
-      console.error('Model ' + model.name + ' failed:', e);
+      console.warn('Model ' + model.name + ' failed:', e);
       html = null;
     }
   }
@@ -70,7 +69,6 @@ async function playGame(libraryIndex) {
   document.getElementById('play-loading').style.display = 'none';
 
   if (html) {
-    // Clean the HTML — remove markdown fences if AI added them
     html = cleanGeneratedHTML(html);
     document.getElementById('play-iframe').srcdoc = html;
   } else {
@@ -78,107 +76,64 @@ async function playGame(libraryIndex) {
   }
 }
 
-// Call NVIDIA API with streaming
-async function callNvidiaAPI(prompt, model) {
-  var templateKwargs = {};
-  templateKwargs[model.thinkKey] = true;
-
-  var payload = {
-    model: model.id,
-    messages: [{ role: 'user', content: prompt }],
-    max_tokens: 16384,
-    temperature: 0.9,
-    top_p: 0.95,
-    stream: true,
-    chat_template_kwargs: templateKwargs
-  };
-
-  var response = await fetch(NVIDIA_URL, {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + NVIDIA_KEY,
-      'Content-Type': 'application/json',
-      'Accept': 'text/event-stream'
-    },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    throw new Error('API returned ' + response.status);
+// Call Puter.js AI chat
+async function callPuterAI(prompt, modelId) {
+  if (typeof puter === 'undefined' || !puter.ai || !puter.ai.chat) {
+    throw new Error('Puter.js not loaded');
   }
 
-  // Parse SSE stream
-  var reader = response.body.getReader();
-  var decoder = new TextDecoder();
-  var result = '';
-  var buffer = '';
+  document.getElementById('play-loading-sub').textContent = 'Generating game code...';
 
-  while (true) {
-    var chunk = await reader.read();
-    if (chunk.done) break;
+  var response = await puter.ai.chat(prompt, { model: modelId });
 
-    buffer += decoder.decode(chunk.value, { stream: true });
-    var lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
-    for (var i = 0; i < lines.length; i++) {
-      var line = lines[i].trim();
-      if (!line.startsWith('data:')) continue;
-      var data = line.substring(5).trim();
-      if (data === '[DONE]') continue;
-
-      try {
-        var parsed = JSON.parse(data);
-        if (parsed.choices && parsed.choices[0] && parsed.choices[0].delta) {
-          var content = parsed.choices[0].delta.content;
-          if (content) {
-            result += content;
-            // Update loading progress
-            var len = result.length;
-            if (len % 500 < 50) {
-              document.getElementById('play-loading-sub').textContent = 'Generating... (' + Math.round(len / 1000) + 'KB received)';
-            }
-          }
-        }
-      } catch (e) { /* skip unparseable lines */ }
+  // Extract text from response
+  var text = '';
+  if (typeof response === 'string') {
+    text = response;
+  } else if (response && response.message && response.message.content) {
+    // Standard response format
+    if (Array.isArray(response.message.content)) {
+      for (var i = 0; i < response.message.content.length; i++) {
+        var part = response.message.content[i];
+        if (part.type === 'text') text += part.text;
+      }
+    } else {
+      text = response.message.content;
     }
+  } else if (response && response.text) {
+    text = response.text;
   }
 
-  return result;
+  document.getElementById('play-loading-sub').textContent = 'Received ' + Math.round(text.length / 1024) + 'KB of code';
+  return text;
 }
 
 // Clean up generated HTML
 function cleanGeneratedHTML(html) {
-  // Remove markdown code fences
   html = html.replace(/```html\s*/gi, '').replace(/```\s*/g, '');
-  // Find the actual HTML document
   var start = html.indexOf('<!DOCTYPE');
+  if (start < 0) start = html.indexOf('<!doctype');
   if (start < 0) start = html.indexOf('<html');
-  if (start < 0) start = html.indexOf('<HTML');
   if (start >= 0) html = html.substring(start);
   var end = html.lastIndexOf('</html>');
-  if (end < 0) end = html.lastIndexOf('</HTML>');
   if (end >= 0) html = html.substring(0, end + 7);
   return html;
 }
 
-// Fallback game if AI fails
+// Fallback game if all AI models fail
 function buildFallbackGame(name) {
   return '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>' + name + '</title><style>' +
-    '*{margin:0;padding:0}body{background:#111;overflow:hidden}' +
-    'canvas{display:block}' +
-    '</style></head><body><canvas id="c"></canvas><script>' +
-    'var c=document.getElementById("c"),x=c.getContext("2d");' +
-    'c.width=innerWidth;c.height=innerHeight;' +
+    '*{margin:0;padding:0}body{background:#111;overflow:hidden}canvas{display:block}</style></head><body><canvas id="c"></canvas><script>' +
+    'var c=document.getElementById("c"),x=c.getContext("2d");c.width=innerWidth;c.height=innerHeight;' +
     'var px=c.width/2,py=c.height/2,score=0,hp=100,enemies=[],bullets=[],keys={},started=false,dead=false;' +
     'var title="' + name.replace(/"/g, '\\"') + '";' +
     'function rand(a,b){return Math.random()*(b-a)+a}' +
     'function spawnEnemy(){var a=Math.random()*Math.PI*2,d=500;enemies.push({x:px+Math.cos(a)*d,y:py+Math.sin(a)*d,hp:3,sz:12,spd:rand(1,2.5),col:"hsl("+rand(0,360)+",70%,50%)"})}' +
-    'addEventListener("keydown",function(e){keys[e.key]=true;if(e.key==="Enter"&&!started){started=true;dead=false;hp=100;score=0;enemies=[];bullets=[]}if(e.key==="Enter"&&dead){started=true;dead=false;hp=100;score=0;enemies=[];bullets=[]}});' +
+    'addEventListener("keydown",function(e){keys[e.key]=true;if(e.key==="Enter"&&(!started||dead)){started=true;dead=false;hp=100;score=0;enemies=[];bullets=[]}});' +
     'addEventListener("keyup",function(e){keys[e.key]=false});' +
     'addEventListener("click",function(e){if(!started||dead)return;var a=Math.atan2(e.clientY-py,e.clientX-px);bullets.push({x:px,y:py,dx:Math.cos(a)*8,dy:Math.sin(a)*8,life:60})});' +
     'var tick=0;function loop(){requestAnimationFrame(loop);x.fillStyle="#111";x.fillRect(0,0,c.width,c.height);' +
-    'if(!started){x.fillStyle="#67c1f5";x.font="bold 28px Inter,sans-serif";x.textAlign="center";x.fillText(title,c.width/2,c.height/2-30);x.font="14px Inter";x.fillStyle="#8f98a0";x.fillText("Press ENTER to start",c.width/2,c.height/2+10);x.fillText("WASD to move, Click to shoot",c.width/2,c.height/2+35);return}' +
+    'if(!started){x.fillStyle="#67c1f5";x.font="bold 28px Inter,sans-serif";x.textAlign="center";x.fillText(title,c.width/2,c.height/2-30);x.font="14px Inter";x.fillStyle="#8f98a0";x.fillText("Press ENTER to start",c.width/2,c.height/2+10);x.fillText("WASD move / Click shoot",c.width/2,c.height/2+35);return}' +
     'if(dead){x.fillStyle="#e74c3c";x.font="bold 24px Inter";x.textAlign="center";x.fillText("GAME OVER",c.width/2,c.height/2-20);x.fillStyle="#c7d5e0";x.font="16px Inter";x.fillText("Score: "+score,c.width/2,c.height/2+15);x.fillText("Press ENTER to restart",c.width/2,c.height/2+45);return}' +
     'var spd=3.5;if(keys.w||keys.ArrowUp)py-=spd;if(keys.s||keys.ArrowDown)py+=spd;if(keys.a||keys.ArrowLeft)px-=spd;if(keys.d||keys.ArrowRight)px+=spd;' +
     'px=Math.max(10,Math.min(c.width-10,px));py=Math.max(10,Math.min(c.height-10,py));' +
@@ -194,7 +149,6 @@ function buildFallbackGame(name) {
     '<\/script></body></html>';
 }
 
-// Fullscreen toggle
 function togglePlayFullscreen() {
   var iframe = document.getElementById('play-iframe');
   if (iframe.requestFullscreen) iframe.requestFullscreen();
