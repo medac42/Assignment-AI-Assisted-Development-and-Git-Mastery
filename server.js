@@ -1,5 +1,5 @@
 /* SteamVault — Mini proxy server
-   Serves static files + proxies AI requests to NVIDIA API */
+   Serves static files + proxies AI requests to g4f.space */
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 const http = require('http');
 const https = require('https');
@@ -7,54 +7,60 @@ const fs = require('fs');
 const path = require('path');
 
 const PORT = 8091;
-const NV_KEY = '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';
 
 const MIME = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.svg': 'image/svg+xml', '.json': 'application/json'
 };
 
-function proxyToNvidia(payload, res, redirectCount) {
-  if (redirectCount > 5) {
-    res.writeHead(502, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ error: 'Too many redirects' }));
+// Proxy to g4f.space
+function proxyToG4F(body, res) {
+  let parsed;
+  try { parsed = JSON.parse(body); } catch (e) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid JSON' }));
     return;
   }
 
-  const url = new URL('https://integrate.api.nvidia.com/v1/chat/completions');
+  const provider = parsed.provider || 'nvidia';
+  delete parsed.provider;
+
+  // Build g4f.space URL
+  const g4fPath = '/api/' + provider + '/chat/completions';
+  const payload = JSON.stringify(parsed);
+
+  console.log('Proxying to g4f.space' + g4fPath + ' model=' + parsed.model);
+
   const options = {
-    hostname: url.hostname,
+    hostname: 'g4f.space',
     port: 443,
-    path: url.pathname,
+    path: g4fPath,
     method: 'POST',
     headers: {
-      'Authorization': 'Bearer ' + NV_KEY,
       'Content-Type': 'application/json',
-      'Accept': 'text/event-stream',
       'Content-Length': Buffer.byteLength(payload)
     }
   };
 
-  const proxy = https.request(options, (nvRes) => {
+  const proxy = https.request(options, (g4fRes) => {
     // Follow redirects
-    if ([301, 302, 307, 308].includes(nvRes.statusCode) && nvRes.headers.location) {
-      console.log('Following redirect to:', nvRes.headers.location);
-      followRedirect(nvRes.headers.location, payload, res, redirectCount + 1);
+    if ([301, 302, 307, 308].includes(g4fRes.statusCode) && g4fRes.headers.location) {
+      console.log('Redirect to:', g4fRes.headers.location);
+      followRedirect(g4fRes.headers.location, payload, res, 0);
       return;
     }
 
-    console.log('NVIDIA responded:', nvRes.statusCode);
-    res.writeHead(nvRes.statusCode, {
-      'Content-Type': nvRes.headers['content-type'] || 'text/event-stream',
+    console.log('g4f responded:', g4fRes.statusCode);
+    res.writeHead(g4fRes.statusCode, {
+      'Content-Type': g4fRes.headers['content-type'] || 'application/json',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
       'Access-Control-Allow-Origin': '*'
     });
-    nvRes.pipe(res);
+    g4fRes.pipe(res);
   });
 
   proxy.on('error', (e) => {
-    console.error('Proxy error:', e.message);
+    console.error('g4f proxy error:', e.message);
     res.writeHead(502, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: e.message }));
   });
@@ -77,32 +83,25 @@ function followRedirect(location, payload, res, count) {
     path: url.pathname + url.search,
     method: 'POST',
     headers: {
-      'Authorization': 'Bearer ' + NV_KEY,
       'Content-Type': 'application/json',
-      'Accept': 'text/event-stream',
       'Content-Length': Buffer.byteLength(payload)
     }
   };
 
-  const req = https.request(options, (nvRes) => {
-    if ([301, 302, 307, 308].includes(nvRes.statusCode) && nvRes.headers.location) {
-      console.log('Following redirect to:', nvRes.headers.location);
-      followRedirect(nvRes.headers.location, payload, res, count + 1);
+  const req = https.request(options, (r) => {
+    if ([301, 302, 307, 308].includes(r.statusCode) && r.headers.location) {
+      followRedirect(r.headers.location, payload, res, count + 1);
       return;
     }
-
-    console.log('NVIDIA responded:', nvRes.statusCode);
-    res.writeHead(nvRes.statusCode, {
-      'Content-Type': nvRes.headers['content-type'] || 'text/event-stream',
+    res.writeHead(r.statusCode, {
+      'Content-Type': r.headers['content-type'] || 'application/json',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
       'Access-Control-Allow-Origin': '*'
     });
-    nvRes.pipe(res);
+    r.pipe(res);
   });
 
   req.on('error', (e) => {
-    console.error('Redirect error:', e.message);
     res.writeHead(502, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ error: e.message }));
   });
@@ -121,10 +120,7 @@ const server = http.createServer((req, res) => {
   if (req.url === '/api/chat' && req.method === 'POST') {
     let body = '';
     req.on('data', chunk => body += chunk);
-    req.on('end', () => {
-      console.log('Proxying to NVIDIA...');
-      proxyToNvidia(body, res, 0);
-    });
+    req.on('end', () => proxyToG4F(body, res));
     return;
   }
 
@@ -140,6 +136,6 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log('SteamVault running at http://localhost:' + PORT);
-  console.log('AI proxy at /api/chat (follows redirects)');
+  console.log('SteamVault at http://localhost:' + PORT);
+  console.log('AI proxy at /api/chat -> g4f.space');
 });

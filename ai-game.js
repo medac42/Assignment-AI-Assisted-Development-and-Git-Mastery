@@ -29,9 +29,9 @@ async function playGame(idx) {
   var prompt = buildGamePrompt(game.name);
   var html = null;
 
-  // 1. Try Puter.js from browser (works with VPN extensions)
+  // 1. Try Puter.js with free models
   if (typeof puter !== 'undefined' && puter.ai && puter.ai.chat) {
-    var puterModels = ['gpt-4o-mini', 'claude-3-5-haiku-20241022', 'gemini-2.0-flash'];
+    var puterModels = ['gpt-4o-mini','gpt-4.1-nano','gpt-4.1-mini','o4-mini','gpt-4o','gpt-5-nano','gpt-5-mini'];
     for (var p = 0; p < puterModels.length; p++) {
       document.getElementById('play-loading-model').textContent = puterModels[p] + ' (Puter.js)';
       document.getElementById('play-loading-sub').textContent = 'Generating with ' + puterModels[p] + '...';
@@ -46,23 +46,23 @@ async function playGame(idx) {
         }
         if (text && text.length > 500 && text.indexOf('<') >= 0) { html = text; break; }
       } catch (e) {
-        console.warn('Puter ' + puterModels[p] + ' failed:', e);
+        console.warn('Puter ' + puterModels[p] + ':', e);
       }
     }
   }
 
-  // 2. Fallback: local proxy -> NVIDIA API
+  // 2. Fallback: g4f.space via local proxy
   if (!html) {
-    for (var m = 0; m < NV_MODELS.length; m++) {
-      var model = NV_MODELS[m];
-      document.getElementById('play-loading-model').textContent = model.name + ' (NVIDIA proxy)';
-      document.getElementById('play-loading-sub').textContent = 'Connecting to ' + model.name + '...';
+    var g4fProviders = ['nvidia', 'gemini', 'groq', 'pollinations'];
+    for (var g = 0; g < g4fProviders.length; g++) {
+      document.getElementById('play-loading-model').textContent = 'g4f/' + g4fProviders[g];
+      document.getElementById('play-loading-sub').textContent = 'Connecting to g4f ' + g4fProviders[g] + '...';
       try {
-        html = await callLocalProxy(prompt, model);
+        html = await callLocalProxy(prompt, g4fProviders[g]);
         if (html && html.length > 500 && html.indexOf('<') >= 0) break;
         html = null;
       } catch (e) {
-        console.warn(model.name + ' failed:', e);
+        console.warn('g4f ' + g4fProviders[g] + ' failed:', e);
         html = null;
       }
     }
@@ -72,16 +72,13 @@ async function playGame(idx) {
   document.getElementById('play-iframe').srcdoc = html ? cleanHTML(html) : themedFallbackGame(game.name);
 }
 
-// Call local proxy /api/chat (streaming SSE)
-async function callLocalProxy(prompt, model) {
+// Call local proxy -> g4f.space (streaming SSE)
+async function callLocalProxy(prompt, provider) {
   var payload = {
-    model: model.id,
+    model: 'gpt-4o',
     messages: [{ role: 'user', content: prompt }],
-    max_tokens: 16384,
     temperature: 0.9,
-    top_p: 0.95,
-    stream: true,
-    chat_template_kwargs: model.tkw
+    provider: provider
   };
 
   var res = await fetch('/api/chat', {
@@ -92,17 +89,13 @@ async function callLocalProxy(prompt, model) {
 
   if (!res.ok) throw new Error('Proxy returned ' + res.status);
 
-  var reader = res.body.getReader();
-  var decoder = new TextDecoder();
-  var result = '', buffer = '';
+  // Try to read as streaming or plain JSON
+  var text = await res.text();
 
-  while (true) {
-    var chunk = await reader.read();
-    if (chunk.done) break;
-    buffer += decoder.decode(chunk.value, { stream: true });
-    var lines = buffer.split('\n');
-    buffer = lines.pop() || '';
-
+  // Parse SSE if it looks like SSE
+  if (text.indexOf('data:') >= 0) {
+    var result = '';
+    var lines = text.split('\n');
     for (var i = 0; i < lines.length; i++) {
       var line = lines[i].trim();
       if (!line.startsWith('data:')) continue;
@@ -112,14 +105,23 @@ async function callLocalProxy(prompt, model) {
         var p = JSON.parse(data);
         if (p.choices && p.choices[0] && p.choices[0].delta && p.choices[0].delta.content) {
           result += p.choices[0].delta.content;
-          if (result.length % 800 < 50) {
-            document.getElementById('play-loading-sub').textContent = 'Generating... ' + Math.round(result.length / 1024) + 'KB';
-          }
+        } else if (p.choices && p.choices[0] && p.choices[0].message && p.choices[0].message.content) {
+          result += p.choices[0].message.content;
         }
       } catch (e) {}
     }
+    document.getElementById('play-loading-sub').textContent = 'Received ' + Math.round(result.length / 1024) + 'KB';
+    return result;
   }
-  return result;
+
+  // Plain JSON response
+  try {
+    var json = JSON.parse(text);
+    if (json.choices && json.choices[0] && json.choices[0].message) {
+      return json.choices[0].message.content;
+    }
+  } catch (e) {}
+  return text;
 }
 
 function cleanHTML(h) {
