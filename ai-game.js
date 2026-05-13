@@ -13,15 +13,24 @@ async function playGame(idx) {
   document.getElementById('play-game-name').textContent = game.name;
   document.getElementById('play-loading').style.display = 'flex';
   document.getElementById('play-loading-title').textContent = 'Generating ' + game.name + '...';
-  document.getElementById('play-loading-sub').textContent = 'Connecting to AI...';
+  document.getElementById('play-loading-sub').textContent = 'Fetching game info...';
   document.getElementById('play-loading-model').textContent = '';
   document.getElementById('play-iframe').srcdoc = '';
 
+  // Step 0: Fetch real game info from Steam
+  var gameInfo = null;
+  if (game.steamAppID) {
+    try {
+      var infoRes = await fetch('/api/steam-info?appid=' + game.steamAppID);
+      if (infoRes.ok) gameInfo = await infoRes.json();
+    } catch (e) { console.warn('Steam info fetch failed:', e); }
+  }
+
   var html = null;
 
-  // Multi-step Cohere generation
+  // Multi-step Cohere generation with real game context
   try {
-    html = await generateGameMultiStep(game.name);
+    html = await generateGameMultiStep(game.name, gameInfo);
   } catch (e) {
     console.warn('Multi-step generation failed:', e);
   }
@@ -33,7 +42,7 @@ async function playGame(idx) {
       document.getElementById('play-loading-model').textContent = modelShort;
       document.getElementById('play-loading-sub').textContent = 'Trying ' + modelShort + '...';
       try {
-        html = await callOpenRouter(buildFullPrompt(game.name), OR_MODELS[i]);
+        html = await callOpenRouter(buildFullPrompt(game.name, gameInfo), OR_MODELS[i]);
         if (html && html.length > 300 && html.indexOf('<') >= 0) break;
         html = null;
       } catch (e) {
@@ -48,26 +57,38 @@ async function playGame(idx) {
   document.getElementById('play-iframe').srcdoc = valid ? cleanHTML(html) : themedFallbackGame(game.name);
 }
 
+// Build context string from Steam API data
+function buildGameContext(name, info) {
+  if (!info) return 'the Steam game "' + name + '"';
+  var ctx = '"' + name + '"';
+  if (info.short_description) ctx += '. Description: ' + info.short_description;
+  if (info.genres) ctx += '. Genres: ' + info.genres;
+  if (info.categories) ctx += '. Features: ' + info.categories;
+  if (info.developers) ctx += '. By: ' + info.developers;
+  return ctx;
+}
+
 // ── Multi-step game generation with Cohere ──
-async function generateGameMultiStep(name) {
+async function generateGameMultiStep(name, gameInfo) {
   var messages = [];
-  var system = 'You are an expert HTML5 game developer who knows every Steam game. ' +
-    'You create 2D canvas mini-games that match the GENRE and THEME of real games. ' +
-    'A puzzle game gets a puzzle. A racing game gets racing. A platformer gets platforming. An RPG gets RPG mechanics. ' +
+  var ctx = buildGameContext(name, gameInfo);
+  var system = 'You are an expert HTML5 game developer. You know every Steam game in detail. ' +
+    'You create 2D canvas mini-games that are simplified versions of real games. ' +
+    'The mini-game must capture the CORE GAMEPLAY LOOP of the original. ' +
     'You write self-contained HTML files with embedded CSS and JS. Output ONLY code, no markdown fences, no explanation. ' +
     'When asked to update code, output the COMPLETE updated HTML file.';
 
-  // Step 1: AI decides game type based on the real game
+  // Step 1: Core gameplay based on real game info
   updateLoading('Step 1/3', 'Designing game concept...');
   messages.push({
     role: 'user',
-    content: 'Create a complete HTML file for a 2D canvas mini-game inspired by the Steam game "' + name + '". ' +
-      'IMPORTANT: Think about what "' + name + '" actually is. If it is a puzzle game, make a puzzle. ' +
-      'If it is a racing game, make a racing game. If it is a platformer, make a platformer. ' +
-      'If it is a strategy game, make a simplified strategy game. If it is a sports game, make a sports game. ' +
-      'Match the GENRE and THEME of the real game as closely as possible. ' +
-      'Canvas fills the viewport. Use keyboard controls appropriate to the genre. ' +
-      'Use a color palette that matches "' + name + '". ' +
+    content: 'Create a complete HTML file for a 2D canvas mini-game that is a simplified version of ' + ctx + '. ' +
+      'The mini-game should capture the CORE GAMEPLAY of the original. ' +
+      'For example: if it is a farming sim, include planting/harvesting. If FPS, include aiming/shooting. ' +
+      'If puzzle, include the puzzle mechanic. If racing, include driving physics. If platformer, include jumping/platforms. ' +
+      'If RPG, include exploration and combat. If sports, simulate that sport. ' +
+      'Canvas fills the viewport. Use appropriate keyboard/mouse controls for the genre. ' +
+      'Use a color palette and visual style that matches the original game. ' +
       'Start with <!DOCTYPE html>. Make it fun and playable immediately.'
   });
 
@@ -83,8 +104,8 @@ async function generateGameMultiStep(name) {
       '1. Progressive difficulty: the game gets harder over time or levels\n' +
       '2. A scoring system that fits the game genre\n' +
       '3. Visual feedback: particle effects, screen shake, animations on key events\n' +
-      '4. At least 3 different types of challenges/obstacles/enemies appropriate to the genre\n' +
-      '5. Collectibles or power-ups that make sense for the game\n' +
+      '4. At least 3 different types of challenges/obstacles appropriate to the genre of ' + name + '\n' +
+      '5. Collectibles or power-ups that make sense for this type of game\n' +
       '6. Sound effects using Web Audio API (short beeps/tones)\n' +
       'Output the COMPLETE updated HTML file.'
   });
@@ -115,9 +136,10 @@ function updateLoading(model, sub) {
   document.getElementById('play-loading-sub').textContent = sub;
 }
 
-function buildFullPrompt(name) {
-  return 'Create a complete HTML file with a 2D canvas mini-game inspired by the Steam game "' + name + '". ' +
-    'IMPORTANT: Match the actual GENRE of "' + name + '". If it is a puzzle, make a puzzle. Racing = racing. RPG = RPG. Platformer = platformer. ' +
+function buildFullPrompt(name, gameInfo) {
+  var ctx = buildGameContext(name, gameInfo);
+  return 'Create a complete HTML file with a 2D canvas mini-game that is a simplified version of ' + ctx + '. ' +
+    'The mini-game must capture the CORE GAMEPLAY of the original game. ' +
     'Canvas fills the page. Use controls appropriate to the genre. ' +
     'Include a title screen with "' + name + ' - Press ENTER", score system, and game over screen. ' +
     'Progressive difficulty. Themed colors matching the real game. ' +

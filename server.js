@@ -95,6 +95,59 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Steam game info proxy (extracts description, genres, tags)
+  if (req.url.startsWith('/api/steam-info') && req.method === 'GET') {
+    const urlParts = new URL(req.url, 'http://localhost');
+    const appId = urlParts.searchParams.get('appid');
+    if (!appId) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Missing appid' }));
+      return;
+    }
+
+    const steamUrl = `https://store.steampowered.com/api/appdetails?appids=${appId}&l=english`;
+    console.log('Fetching Steam info for appid=' + appId);
+
+    https.get(steamUrl, (steamRes) => {
+      let data = '';
+      steamRes.on('data', chunk => data += chunk);
+      steamRes.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          const appData = json[appId];
+          if (!appData || !appData.success) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Game not found' }));
+            return;
+          }
+          const d = appData.data;
+          // Extract clean info for AI
+          const info = {
+            name: d.name || '',
+            short_description: d.short_description || '',
+            genres: (d.genres || []).map(g => g.description).join(', '),
+            categories: (d.categories || []).map(c => c.description).join(', '),
+            type: d.type || '',
+            developers: (d.developers || []).join(', '),
+            publishers: (d.publishers || []).join(', ')
+          };
+          // Strip HTML from description
+          info.short_description = info.short_description.replace(/<[^>]*>/g, '');
+          res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+          res.end(JSON.stringify(info));
+        } catch (e) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Parse error' }));
+        }
+      });
+    }).on('error', (e) => {
+      console.error('Steam API error:', e.message);
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    });
+    return;
+  }
+
   // Static files
   let filePath = req.url === '/' ? '/index.html' : req.url.split('?')[0];
   filePath = path.join(__dirname, filePath);

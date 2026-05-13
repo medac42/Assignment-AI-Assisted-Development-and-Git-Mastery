@@ -260,7 +260,7 @@ function buyFromModal() {
   var d = state.currentGame; if (!d) return;
   if (isOwned(d.gameID)) { showToast('Already in library.', 'error'); return; }
   if (state.cart.some(function(g) { return g.gameID === d.gameID; })) { showToast('Already in cart.', 'error'); return; }
-  state.cart.push({ gameID: d.gameID, name: d.title, image: getImg(d), price: parseFloat(d.salePrice) });
+  state.cart.push({ gameID: d.gameID, steamAppID: d.steamAppID, name: d.title, image: getImg(d), price: parseFloat(d.salePrice) });
   showToast('"' + d.title + '" added to cart.', 'success'); updateUI(); closeModalForce();
 }
 function removeFromCart(i) { var r = state.cart.splice(i, 1); showToast('"' + r[0].name + '" removed.', 'success'); updateUI(); renderCart(); }
@@ -269,7 +269,7 @@ function purchaseCart() {
   if (total > state.wallet) { showToast('Insufficient funds.', 'error'); return; }
   state.wallet -= total; state.wallet = Math.round(state.wallet * 100) / 100;
   var today = new Date().toLocaleDateString('es-ES');
-  state.cart.forEach(function(g) { if (!isOwned(g.gameID)) state.library.push({ gameID: g.gameID, name: g.name, image: g.image, price: g.price, purchaseDate: today }); });
+  state.cart.forEach(function(g) { if (!isOwned(g.gameID)) state.library.push({ gameID: g.gameID, steamAppID: g.steamAppID, name: g.name, image: g.image, price: g.price, purchaseDate: today }); });
   var c = state.cart.length; state.cart = []; saveToStorage(); updateUI(); renderCart();
   showToast(c + ' game(s) purchased. -' + total.toFixed(2) + ' EUR', 'success');
 }
