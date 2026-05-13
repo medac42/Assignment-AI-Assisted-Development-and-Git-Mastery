@@ -84,9 +84,11 @@ async function generateGameMultiStep(name, gameInfo) {
     role: 'user',
     content: 'Create a complete HTML file for a 2D canvas mini-game that is a simplified version of ' + ctx + '. ' +
       'The mini-game should capture the CORE GAMEPLAY of the original. ' +
-      'For example: if it is a farming sim, include planting/harvesting. If FPS, include aiming/shooting. ' +
-      'If puzzle, include the puzzle mechanic. If racing, include driving physics. If platformer, include jumping/platforms. ' +
-      'If RPG, include exploration and combat. If sports, simulate that sport. ' +
+      'USE REAL ELEMENTS FROM THE GAME: real character names, real enemy names, real item names, real weapon names, real location names. ' +
+      'Draw characters and enemies as simple but recognizable shapes with their names shown. ' +
+      'For example: if it is a farming sim, include planting/harvesting crops from the game. If FPS, include weapons from the game. ' +
+      'If puzzle, include the puzzle mechanic. If racing, include cars/tracks. If platformer, include the game\'s enemies. ' +
+      'If RPG, include the game\'s classes/spells. If sports, simulate that sport with real team mechanics. ' +
       'Canvas fills the viewport. Use appropriate keyboard/mouse controls for the genre. ' +
       'Use a color palette and visual style that matches the original game. ' +
       'Start with <!DOCTYPE html>. Make it fun and playable immediately.'
