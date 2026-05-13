@@ -1,17 +1,19 @@
 /* SteamVault — AI Game Generator
-   Calls local /api/chat proxy -> NVIDIA API. No CORS issues. */
+   Uses OpenRouter (free models) + Cohere fallback via local proxy */
 
-var NV_MODELS = [
-  { id: 'google/gemma-4-31b-it', name: 'Gemma 4 31B', tkw: { enable_thinking: true } },
-  { id: 'deepseek-ai/deepseek-v4-flash', name: 'DeepSeek V4 Flash', tkw: { thinking: true } }
+var OR_MODELS = [
+  'google/gemini-2.0-flash-lite-preview-02-05:free',
+  'meta-llama/llama-3.3-70b-instruct:free',
+  'mistralai/mistral-small-24b-instruct-2501:free'
 ];
 
 function buildGamePrompt(name) {
-  return 'Create a complete HTML file with a canvas game about "' + name + '". ' +
-    'Canvas fills the page. WASD to move, click to shoot, Space for special. ' +
+  return 'Create a complete HTML file with a canvas game inspired by "' + name + '". ' +
+    'Canvas fills the page. WASD to move, click to shoot, Space for special ability. ' +
     'Show HP bar and score. Title screen says "' + name + ' - Press ENTER". ' +
     'Enemies spawn and chase player. Score goes up when killed. Game over on 0 HP. ' +
-    'Use only HTML+CSS+JS in one file. Start with <!DOCTYPE html>. No markdown.';
+    'Use themed colors matching the game. Multiple enemy types. Particles on impacts. ' +
+    'Use only HTML+CSS+JS in one file. Start with <!DOCTYPE html>. No markdown, no explanation.';
 }
 
 async function playGame(idx) {
@@ -25,78 +27,92 @@ async function playGame(idx) {
   document.getElementById('play-loading-model').textContent = '';
   document.getElementById('play-iframe').srcdoc = '';
 
-  // Pollinations.ai (text.pollinations.ai) — free, anonymous
-  document.getElementById('play-loading-model').textContent = 'AI Game Engine';
-  document.getElementById('play-loading-sub').textContent = 'Generating game...';
-  try {
-    html = await callPollinations(prompt, 'openai');
-  } catch (e) {
-    console.warn('Pollinations failed:', e);
+  var prompt = buildGamePrompt(game.name);
+  var html = null;
+
+  // 1. OpenRouter free models (via proxy to bypass Sophos)
+  for (var i = 0; i < OR_MODELS.length; i++) {
+    var modelShort = OR_MODELS[i].split('/').pop().split(':')[0];
+    document.getElementById('play-loading-model').textContent = modelShort;
+    document.getElementById('play-loading-sub').textContent = 'Generating with ' + modelShort + '...';
+    try {
+      html = await callOpenRouter(prompt, OR_MODELS[i]);
+      if (html && html.length > 300 && html.indexOf('<') >= 0) break;
+      html = null;
+    } catch (e) {
+      console.warn('OpenRouter ' + OR_MODELS[i] + ':', e.message);
+      html = null;
+    }
   }
 
-  // Try proxy if direct CORS failed
-  if (!html || html.length < 200) {
-    try {
-      document.getElementById('play-loading-sub').textContent = 'Trying alternate route...';
-      html = await callPollinationsProxy(prompt, 'openai');
-    } catch (e) {
-      console.warn('Proxy failed:', e);
+  // 2. Cohere fallback (via proxy)
+  if (!html) {
+    var cohereModels = ['command-r7b-12-2024', 'command-a-03-2025'];
+    for (var j = 0; j < cohereModels.length; j++) {
+      document.getElementById('play-loading-model').textContent = cohereModels[j];
+      document.getElementById('play-loading-sub').textContent = 'Trying Cohere ' + cohereModels[j] + '...';
+      try {
+        html = await callCohere(prompt, cohereModels[j]);
+        if (html && html.length > 300 && html.indexOf('<') >= 0) break;
+        html = null;
+      } catch (e) {
+        console.warn('Cohere ' + cohereModels[j] + ':', e.message);
+        html = null;
+      }
     }
   }
 
   document.getElementById('play-loading').style.display = 'none';
-  var validHtml = html && html.length > 200 && html.indexOf('<') >= 0;
+  var validHtml = html && html.length > 300 && html.indexOf('<') >= 0;
   document.getElementById('play-iframe').srcdoc = validHtml ? cleanHTML(html) : themedFallbackGame(game.name);
 }
 
-// Direct browser call to Pollinations.ai (CORS enabled, free)
-async function callPollinations(prompt, model) {
-  var payload = {
-    messages: [
-      { role: 'system', content: 'You are an expert game developer. Output ONLY valid HTML. No markdown, no explanation.' },
-      { role: 'user', content: prompt }
-    ],
-    model: model,
-    seed: Math.floor(Math.random() * 100000)
-  };
-
-  var res = await fetch('https://text.pollinations.ai/openai', {
+// OpenRouter via local proxy (to avoid CORS + Sophos)
+async function callOpenRouter(prompt, model) {
+  var res = await fetch('/api/openrouter', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify({
+      model: model,
+      messages: [
+        { role: 'system', content: 'You are an expert game developer. Output ONLY valid HTML code. No markdown, no explanation, no code fences.' },
+        { role: 'user', content: prompt }
+      ],
+      max_tokens: 8000,
+      temperature: 0.8
+    })
   });
-
-  if (!res.ok) throw new Error('Pollinations returned ' + res.status);
+  if (!res.ok) throw new Error('OpenRouter proxy ' + res.status);
   var json = await res.json();
   if (json.choices && json.choices[0] && json.choices[0].message) {
     return json.choices[0].message.content;
   }
+  if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
   return '';
 }
 
-// Pollinations via local proxy (if CORS fails)
-async function callPollinationsProxy(prompt, model) {
-  var payload = {
-    messages: [
-      { role: 'system', content: 'You are an expert game developer. Output ONLY valid HTML. No markdown, no explanation.' },
-      { role: 'user', content: prompt }
-    ],
-    model: model,
-    seed: Math.floor(Math.random() * 100000),
-    provider: 'pollinations'
-  };
-
-  var res = await fetch('/api/chat', {
+// Cohere via local proxy
+async function callCohere(prompt, model) {
+  var res = await fetch('/api/cohere', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify({
+      model: model,
+      messages: [
+        { role: 'system', content: 'You are an expert game developer. Output ONLY valid HTML code. No markdown, no explanation, no code fences.' },
+        { role: 'user', content: prompt }
+      ],
+      max_tokens: 8000,
+      temperature: 0.8
+    })
   });
-
-  if (!res.ok) throw new Error('Proxy returned ' + res.status);
+  if (!res.ok) throw new Error('Cohere proxy ' + res.status);
   var json = await res.json();
-  if (json.choices && json.choices[0] && json.choices[0].message) {
-    return json.choices[0].message.content;
+  // Cohere v2 response format
+  if (json.message && json.message.content && json.message.content[0]) {
+    return json.message.content[0].text;
   }
+  if (json.error) throw new Error(json.error.message || JSON.stringify(json.error));
   return '';
 }
 
@@ -158,7 +174,7 @@ function themedFallbackGame(name) {
     'g.fillStyle="#c7d5e0";g.font="10px monospace";g.textAlign="left";g.fillText("HP:"+Math.ceil(hp)+"/"+maxHp,14,48);g.fillText("Wave:"+wave,90,48);g.textAlign="right";g.fillText("Score:"+score,214,48);' +
     'var mmx=W-70,mmy=10;g.fillStyle="rgba(0,0,0,.5)";g.fillRect(mmx,mmy,60,60);g.fillStyle=PCOL;g.fillRect(mmx+29,mmy+29,3,3);' +
     'for(var i=0;i<enemies.length;i++){var ex=(enemies[i].x-px)/20+30,ey=(enemies[i].y-py)/20+30;if(ex>0&&ex<60&&ey>0&&ey<60){g.fillStyle=enemies[i].col;g.fillRect(mmx+ex,mmy+ey,2,2)}}' +
-    '}loop();<\/script></body></html>';
+    '}loop();<\\/script></body></html>';
 }
 
 function togglePlayFullscreen() {
