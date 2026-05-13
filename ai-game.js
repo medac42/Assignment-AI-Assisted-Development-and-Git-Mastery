@@ -126,7 +126,7 @@ async function playGame(idx) {
   clearInterval(progressInterval);
   document.getElementById('play-loading').style.display = 'none';
   iframe.removeAttribute('src');
-  iframe.sandbox = 'allow-scripts';
+  iframe.sandbox = 'allow-scripts allow-same-origin allow-forms allow-popups';
   var valid = html && html.length > 800 && html.indexOf('<') >= 0;
   iframe.srcdoc = valid ? cleanHTML(html) : themedFallbackGame(game.name);
 }
