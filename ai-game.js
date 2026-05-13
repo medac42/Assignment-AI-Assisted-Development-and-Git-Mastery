@@ -22,12 +22,14 @@ async function playGame(idx) {
 
   var html = null;
 
-  // Try OpenRouter models (best to worst) with multi-step generation
+  // Try OpenRouter free models (ordered by programming capability)
   var models = [
-    { id: 'google/gemma-4-31b:free', name: 'Gemma 4 31B' },
-    { id: 'deepseek-ai/deepseek-r1:free', name: 'DeepSeek R1' },
-    { id: 'meta-llama/llama-3.2-3b-instruct:free', name: 'Llama 3.2' },
-    { id: 'openrouter/free', name: 'Auto Free' }
+    { id: 'nvidia/nemotron-3-super:free', name: 'Nemotron 120B' },
+    { id: 'inclusionai/ring-2.6-1t:free', name: 'Ring 1T' },
+    { id: 'poolside/laguna-m.1:free', name: 'Laguna M.1' },
+    { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B' },
+    { id: 'poolside/laguna-xs.2:free', name: 'Laguna XS.2' },
+    { id: 'minimax/minimax-m2.5:free', name: 'MiniMax M2.5' }
   ];
 
   for (var m = 0; m < models.length; m++) {
