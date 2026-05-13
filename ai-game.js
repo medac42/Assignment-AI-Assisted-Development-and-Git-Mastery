@@ -99,10 +99,14 @@ function buildGameContext(name, info) {
 
 function buildFullPrompt(name, gameInfo) {
   var ctx = buildGameContext(name, gameInfo);
-  return 'Make a simple, fun 2D canvas mini-game that plays like a mini version of ' + ctx + '. ' +
+  return 'Make a simple but VISUALLY POLISHED 2D canvas mini-game that plays like a mini version of ' + ctx + '. ' +
     'Use real elements from the actual game (characters, items, tools, places, mechanics). ' +
-    'Keep it simple but playable. Title screen with "' + name + '" and press ENTER. ' +
-    'Score, game over, restart. Canvas fills viewport. ' +
+    'IMPORTANT VISUAL RULES: ' +
+    'Draw characters and objects as detailed shapes (not just squares), with labels showing their names. ' +
+    'Use a colorful themed background (gradients, patterns, or scenery), NOT just a black screen. ' +
+    'Add a visible player character with smooth movement. ' +
+    'Show a title screen with "' + name + '" in large stylized text, themed background, and "Press ENTER to start". ' +
+    'HUD with score and relevant info. Game over with restart. Canvas fills viewport. ' +
     'Start with <!DOCTYPE html>. Single HTML file.';
 }
 
