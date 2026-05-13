@@ -36,11 +36,7 @@ async function playGame(idx) {
 
   var html = null;
   var prompt = buildFullPrompt(game.name, gameInfo);
-  var system = 'You are an expert HTML5 game developer who knows every Steam game. ' +
-    'You create 2D canvas mini-games that are simplified mini-versions of real games. ' +
-    'The mini-game MUST capture the CORE GAMEPLAY LOOP of the original. ' +
-    'USE REAL ELEMENTS: real character names, enemy names, item names, weapon names from the game. ' +
-    'Output ONLY a complete HTML file. No markdown, no explanation, no code fences.';
+  var system = 'You make fun 2D HTML5 canvas games. Output ONLY the HTML code. No markdown, no explanation.';
 
   // 1. Try Groq first (ultra-fast, 5-10s)
   updateLoading('Groq (fast)', 'Generating...');
@@ -94,30 +90,20 @@ async function playGame(idx) {
 
 // Build context from Steam data
 function buildGameContext(name, info) {
-  if (!info) return 'the Steam game "' + name + '"';
+  if (!info) return '"' + name + '"';
   var ctx = '"' + name + '"';
-  if (info.short_description) ctx += '. Description: ' + info.short_description;
-  if (info.genres) ctx += '. Genres: ' + info.genres;
-  if (info.categories) ctx += '. Features: ' + info.categories;
+  if (info.short_description) ctx += ' — ' + info.short_description;
+  if (info.genres) ctx += ' (' + info.genres + ')';
   return ctx;
 }
 
 function buildFullPrompt(name, gameInfo) {
   var ctx = buildGameContext(name, gameInfo);
-  return 'Create a COMPLETE, PLAYABLE HTML file with a 2D canvas mini-game that is a simplified version of ' + ctx + '.\n\n' +
-    'REQUIREMENTS:\n' +
-    '- Match the GENRE of the real game: if puzzle make puzzle, if racing make racing, if FPS make shooter, etc.\n' +
-    '- Use REAL elements from the game: character names, enemy names, items, weapons, locations.\n' +
-    '- Canvas fills the viewport. Appropriate controls for the genre.\n' +
-    '- Title screen: "' + name + '" in large stylized text + "Press ENTER to start" + controls info.\n' +
-    '- HUD: score, level/wave, health or relevant stats.\n' +
-    '- Progressive difficulty across levels/waves.\n' +
-    '- Game Over screen with final score + "Press ENTER to restart".\n' +
-    '- At least 3 types of challenges/enemies/obstacles.\n' +
-    '- Particle effects on impacts/events.\n' +
-    '- Themed color palette matching the original game.\n' +
-    '- Sound effects using Web Audio API (short beeps/tones).\n\n' +
-    'Start with <!DOCTYPE html>. One single file, HTML+CSS+JS embedded. No markdown.';
+  return 'Make a simple, fun 2D canvas mini-game based on ' + ctx + '. ' +
+    'Use real characters, enemies, items, and elements from the actual game. ' +
+    'Keep it simple but playable. Title screen with "' + name + '" and press ENTER. ' +
+    'Score, game over, restart. Canvas fills viewport. ' +
+    'Start with <!DOCTYPE html>. Single HTML file.';
 }
 
 function updateLoading(model, sub) {
