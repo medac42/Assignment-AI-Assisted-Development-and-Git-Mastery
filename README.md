@@ -35,7 +35,7 @@
 
 1. Clona el repositorio:
    ```bash
-   git clone https://github.com/TU_USUARIO/steam-vault.git
+   git clone https://github.com/medac42/Assignment-AI-Assisted-Development-and-Git-Mastery.git
    ```
 
 2. Abre `index.html` en tu navegador, o usa un servidor local:
@@ -64,9 +64,9 @@ steam-vault/
 Este proyecto sigue un flujo de trabajo profesional con Git:
 
 ```
-master ──── commit 1 ──── commit 2 ──── merge ──── commit final
-                                          ↑
-feature-update ──── commit 3 ─────────────┘
+main ──── commit 1 ──── commit 2 ──── merge ──── commit final
+                                        ↑
+feature-update ──── commit 3 ───────────┘
 ```
 
 ### Historial de Commits
@@ -80,7 +80,7 @@ feature-update ──── commit 3 ─────────────┘
 
 ## 🌐 Demo en Vivo
 
-👉 [Ver en GitHub Pages](https://TU_USUARIO.github.io/steam-vault/)
+👉 [Ver en GitHub Pages](https://medac42.github.io/Assignment-AI-Assisted-Development-and-Git-Mastery/)
 
 ## 📜 Licencia
 
