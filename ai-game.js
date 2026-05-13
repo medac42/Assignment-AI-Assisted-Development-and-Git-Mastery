@@ -91,26 +91,55 @@ async function playGame(idx) {
 
 
 
-// Build context from Steam data
-function buildGameContext(name, info) {
-  if (!info) return '"' + name + '"';
-  var ctx = '"' + name + '"';
-  if (info.short_description) ctx += ' — ' + info.short_description;
-  if (info.genres) ctx += ' (' + info.genres + ')';
-  return ctx;
+// Map Steam genres to specific game mechanics so AI doesn't default to generic dodge-game
+function getGameMechanic(name, info) {
+  if (!info) return 'a fun mini-game inspired by "' + name + '"';
+  var g = (info.genres || '').toLowerCase();
+  var d = (info.short_description || '').toLowerCase();
+  var n = name.toLowerCase();
+
+  // Sports
+  if (g.indexOf('sport') >= 0 || n.indexOf('fifa') >= 0 || n.indexOf('nba') >= 0 || n.indexOf('nfl') >= 0) {
+    if (n.indexOf('nba') >= 0 || n.indexOf('basketball') >= 0) return 'a 2D basketball game: control a player dribbling and shooting hoops, free throws, defend the basket';
+    if (n.indexOf('fifa') >= 0 || n.indexOf('football') >= 0 || n.indexOf('soccer') >= 0) return 'a 2D football/soccer game: control a team, pass the ball, shoot at goal, goalkeeper AI';
+    return 'a 2D sports game matching the sport of "' + name + '"';
+  }
+  // Racing
+  if (g.indexOf('racing') >= 0) return 'a top-down 2D racing game: car on a track, steer to avoid walls, checkpoints, lap timer, speed boosts';
+  // Platformer
+  if (g.indexOf('platformer') >= 0 || g.indexOf('platform') >= 0) return 'a 2D side-scrolling platformer: jump between platforms, avoid pits, collect coins, reach the flag at the end of each level';
+  // Puzzle
+  if (g.indexOf('puzzle') >= 0) return 'a 2D puzzle game with grid-based or logic mechanics: match tiles, solve patterns, or arrange pieces. Increasing difficulty per level';
+  // Strategy
+  if (g.indexOf('strategy') >= 0) return 'a simplified turn-based strategy game: place units on a grid, attack enemy units, capture territory, manage resources';
+  // RPG
+  if (g.indexOf('rpg') >= 0 || g.indexOf('role-playing') >= 0) return 'a top-down 2D RPG: walk around a map, talk to NPCs, enter turn-based battles with HP/attack/defense stats, level up';
+  // Simulation / Farming
+  if (g.indexOf('simulation') >= 0 || d.indexOf('farm') >= 0) return 'a 2D farming/simulation game: plant seeds in soil tiles, water them, harvest crops, sell for money, buy upgrades';
+  // Horror / Survival
+  if (g.indexOf('horror') >= 0 || g.indexOf('survival') >= 0) return 'a 2D survival game: dark atmosphere, find items in rooms, manage a flashlight battery, avoid danger, escape before time runs out';
+  // Fighting
+  if (g.indexOf('fighting') >= 0) return 'a 2D fighting game: two fighters face each other, punch/kick/block, health bars, best of 3 rounds';
+  // Shooter / Action
+  if (g.indexOf('shooter') >= 0 || g.indexOf('fps') >= 0) return 'a top-down 2D shooter: aim with mouse, WASD to move, shoot projectiles at targets, ammo management, waves of targets';
+  // Adventure
+  if (g.indexOf('adventure') >= 0) return 'a 2D adventure: explore rooms, pick up items, solve simple puzzles to unlock doors, find the exit';
+  // Action (generic)
+  if (g.indexOf('action') >= 0) return 'a 2D action game that matches the theme of "' + name + '": avoid using a generic dodge game pattern, think about what makes this specific game fun';
+
+  return 'a fun 2D mini-game that captures what "' + name + '" is actually about. DO NOT make a generic dodge/collect game';
 }
 
 function buildFullPrompt(name, gameInfo) {
-  var ctx = buildGameContext(name, gameInfo);
-  return 'Make a simple but VISUALLY POLISHED 2D canvas mini-game that plays like a mini version of ' + ctx + '. ' +
-    'Use real elements from the actual game (characters, items, tools, places, mechanics). ' +
-    'IMPORTANT VISUAL RULES: ' +
-    'Draw characters and objects as detailed shapes (not just squares), with labels showing their names. ' +
-    'Use a colorful themed background (gradients, patterns, or scenery), NOT just a black screen. ' +
-    'Add a visible player character with smooth movement. ' +
-    'Show a title screen with "' + name + '" in large stylized text, themed background, and "Press ENTER to start". ' +
-    'HUD with score and relevant info. Game over with restart. Canvas fills viewport. ' +
-    'Start with <!DOCTYPE html>. Single HTML file.';
+  var mechanic = getGameMechanic(name, gameInfo);
+  var ctx = '';
+  if (gameInfo && gameInfo.short_description) ctx = ' The real game is about: ' + gameInfo.short_description;
+  
+  return 'Create ' + mechanic + '.' + ctx + ' ' +
+    'Use real names and elements from "' + name + '". ' +
+    'Colorful themed background, detailed character shapes (not plain squares). ' +
+    'Title screen: "' + name + '" + press ENTER. HUD, score, game over, restart. ' +
+    'Canvas fills viewport. <!DOCTYPE html>. Single file. No markdown.';
 }
 
 function updateLoading(model, sub) {
