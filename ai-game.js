@@ -35,10 +35,41 @@ async function playGame(idx) {
   }
 
   var html = null;
+  var iframe = document.getElementById('play-iframe');
+
+  // 1. Search for existing browser port on itch.io
+  updateLoading('Searching', 'Looking for browser version...');
+  var foundWeb = false;
+  try {
+    var searchRes = await fetch('/api/search-game?name=' + encodeURIComponent(game.name));
+    if (searchRes.ok) {
+      var searchData = await searchRes.json();
+      if (searchData.results && searchData.results.length > 0) {
+        // Try first result — itch.io games are embeddable
+        var itchUrl = searchData.results[0].url;
+        console.log('Found itch.io game:', itchUrl);
+        updateLoading('Found!', searchData.results[0].title);
+        
+        // Set iframe src to the itch.io game page
+        iframe.removeAttribute('srcdoc');
+        iframe.src = itchUrl;
+        iframe.sandbox = 'allow-scripts allow-same-origin allow-popups';
+        document.getElementById('play-loading').style.display = 'none';
+        foundWeb = true;
+      }
+    }
+  } catch (e) {
+    console.warn('Game search failed:', e.message);
+  }
+
+  if (foundWeb) return;
+
+  // 2. No web version found — generate with AI (heaviest models first)
+  updateLoading('AI Generation', 'No browser version found, generating...');
   var prompt = buildFullPrompt(game.name, gameInfo);
   var system = 'You make fun 2D HTML5 canvas games. Output ONLY the HTML code. No markdown, no explanation.';
 
-  // 1. Try Groq (ultra-fast LPU, best models first)
+  // Try Groq (ultra-fast LPU, best models first)
   var groqModels = ['meta-llama/llama-4-scout-17b-16e-instruct', 'qwen-qwq-32b', 'deepseek-r1-distill-llama-70b', 'llama-3.3-70b-versatile'];
   for (var g = 0; g < groqModels.length; g++) {
     var gName = groqModels[g].split('/').pop().split('-').slice(0,3).join('-');
@@ -56,14 +87,12 @@ async function playGame(idx) {
     }
   }
 
-  // 2. Fallback: OpenRouter free models
+  // Fallback: OpenRouter (heaviest models)
   if (!html) {
     var models = [
-      { id: 'inclusionai/ring-2.6-1t:free', name: 'Ring 1T' },
-      { id: 'poolside/laguna-m.1:free', name: 'Laguna M.1' },
       { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B' },
-      { id: 'poolside/laguna-xs.2:free', name: 'Laguna XS.2' },
-      { id: 'minimax/minimax-m2.5:free', name: 'MiniMax M2.5' }
+      { id: 'inclusionai/ring-2.6-1t:free', name: 'Ring 1T' },
+      { id: 'poolside/laguna-m.1:free', name: 'Laguna M.1' }
     ];
 
     for (var m = 0; m < models.length; m++) {
@@ -74,7 +103,6 @@ async function playGame(idx) {
           console.log(models[m].name + ' success! (' + html.length + ' chars)');
           break;
         }
-        console.warn(models[m].name + ': response too short or invalid');
         html = null;
       } catch (e) {
         console.warn(models[m].name + ':', e.message);
@@ -84,8 +112,10 @@ async function playGame(idx) {
   }
 
   document.getElementById('play-loading').style.display = 'none';
+  iframe.removeAttribute('src');
+  iframe.sandbox = 'allow-scripts';
   var valid = html && html.length > 500 && html.indexOf('<') >= 0;
-  document.getElementById('play-iframe').srcdoc = valid ? cleanHTML(html) : themedFallbackGame(game.name);
+  iframe.srcdoc = valid ? cleanHTML(html) : themedFallbackGame(game.name);
 }
 
 

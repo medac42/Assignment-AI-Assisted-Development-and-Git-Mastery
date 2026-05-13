@@ -108,6 +108,65 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  // Search for browser-playable versions of a game on itch.io
+  if (req.url.startsWith('/api/search-game') && req.method === 'GET') {
+    const urlParts = new URL(req.url, 'http://localhost');
+    const gameName = urlParts.searchParams.get('name');
+    if (!gameName) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'name required' }));
+      return;
+    }
+
+    // Search itch.io for playable HTML games matching this title
+    const searchQuery = encodeURIComponent(gameName);
+    const searchUrl = `/search?q=${searchQuery}&type=games&classification=game`;
+    console.log('Searching itch.io for:', gameName);
+
+    const searchReq = https.request({
+      hostname: 'itch.io',
+      port: 443,
+      path: searchUrl,
+      method: 'GET',
+      headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'text/html' }
+    }, (searchRes) => {
+      let html = '';
+      searchRes.on('data', chunk => html += chunk);
+      searchRes.on('end', () => {
+        // Parse game links from itch.io search results
+        const games = [];
+        const regex = /href="(https:\/\/[a-z0-9\-]+\.itch\.io\/[a-z0-9\-]+)"/gi;
+        let match;
+        const seen = new Set();
+        while ((match = regex.exec(html)) !== null && games.length < 5) {
+          const url = match[1];
+          if (!seen.has(url)) {
+            seen.add(url);
+            games.push(url);
+          }
+        }
+
+        // Extract titles from search results
+        const results = games.map(url => {
+          const slug = url.split('/').pop().replace(/-/g, ' ');
+          return { url: url, title: slug };
+        });
+
+        console.log('itch.io results:', results.length);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ results }));
+      });
+    });
+
+    searchReq.on('error', (e) => {
+      console.error('itch.io search error:', e.message);
+      res.writeHead(502, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ results: [] }));
+    });
+    searchReq.end();
+    return;
+  }
+
   // Steam game info proxy (extracts description, genres, tags)
   if (req.url.startsWith('/api/steam-info') && req.method === 'GET') {
     const urlParts = new URL(req.url, 'http://localhost');
