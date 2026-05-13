@@ -26,6 +26,7 @@
         <button class="nav-link" id="nav-library" onclick="showPage('library')">Library <span class="badge" id="library-count"></span></button>
         <button class="nav-link" id="nav-wishlist" onclick="showPage('wishlist')">Wishlist <span class="badge" id="wishlist-count"></span></button>
         <button class="nav-link" id="nav-cart" onclick="showPage('cart')">Cart <span class="badge" id="cart-count"></span></button>
+        <button class="nav-link" id="nav-play" onclick="showPage('play')" style="color:#a4d007;">Play</button>
       </div>
       <div class="search-bar">
         <input type="text" id="search-input" placeholder="Search the store" autocomplete="off">
@@ -68,6 +69,22 @@
         <button class="btn-purchase" id="btn-purchase-cart" onclick="purchaseCart()">Purchase for myself</button>
       </div>
     </section>
+    <section class="page-view" id="page-play">
+      <div class="play-header" id="play-header">
+        <button class="play-back-btn" onclick="showPage('library')">&larr; Back to Library</button>
+        <span class="play-game-name" id="play-game-name"></span>
+        <button class="play-fullscreen-btn" onclick="togglePlayFullscreen()">Fullscreen</button>
+      </div>
+      <div class="play-loading" id="play-loading" style="display:none;">
+        <div class="play-loading-inner">
+          <div class="loader"><div class="loader-dot"></div><div class="loader-dot"></div><div class="loader-dot"></div></div>
+          <div class="play-loading-title" id="play-loading-title">Generating game...</div>
+          <div class="play-loading-sub" id="play-loading-sub">Analyzing game lore, characters and mechanics via AI</div>
+          <div class="play-loading-model" id="play-loading-model"></div>
+        </div>
+      </div>
+      <iframe id="play-iframe" class="play-iframe" sandbox="allow-scripts allow-same-origin"></iframe>
+    </section>
   </div>
 
   <!-- Hover popup for game cards -->
@@ -101,5 +118,6 @@
 
   <div class="toast-container" id="toast-container"></div>
   <script src="app.js"></script>
+  <script src="ai-game.js"></script>
 </body>
 </html>

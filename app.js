@@ -230,7 +230,12 @@ function openGameModal(deal) {
 function renderLibrary() {
   var l = document.getElementById('library-list'); document.getElementById('library-subtitle').textContent = state.library.length + ' games';
   if (!state.library.length) { l.innerHTML = '<div class="empty-state"><div class="empty-state-title">Your library is empty</div><p>Buy games from the store</p></div>'; return; }
-  l.innerHTML = state.library.map(function(g) { return '<div class="library-card"><img class="library-card-img" src="' + g.image + '" alt="" onerror="this.style.background=\'linear-gradient(135deg,#1b2838,#2a475e)\';this.onerror=null;"><div class="library-card-info"><div class="library-card-title">' + g.name + '</div><div class="library-card-date">Purchased: ' + g.purchaseDate + ' / ' + (g.price === 0 ? 'Free' : g.price.toFixed(2) + ' EUR') + '</div></div></div>'; }).join('');
+  l.innerHTML = state.library.map(function(g, i) {
+    return '<div class="library-card"><img class="library-card-img" src="' + g.image + '" alt="" onerror="this.style.background=\'linear-gradient(135deg,#1b2838,#2a475e)\';this.onerror=null;">' +
+      '<div class="library-card-info"><div class="library-card-title">' + g.name + '</div>' +
+      '<div class="library-card-date">Purchased: ' + g.purchaseDate + ' / ' + (g.price === 0 ? 'Free' : g.price.toFixed(2) + ' EUR') + '</div></div>' +
+      '<button class="play-btn" onclick="playGame(' + i + ')">PLAY</button></div>';
+  }).join('');
 }
 function renderWishlist() {
   var l = document.getElementById('wishlist-list'); document.getElementById('wishlist-subtitle').textContent = state.wishlist.length + ' games';

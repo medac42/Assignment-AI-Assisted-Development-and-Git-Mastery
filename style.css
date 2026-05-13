@@ -159,6 +159,21 @@ img{display:block}a{color:var(--text-light);text-decoration:none}
 /* PAGES */
 .page-view{display:none}.page-view.active{display:block}
 
+/* PLAY PAGE */
+#page-play.active{display:flex;flex-direction:column;height:calc(100vh - 88px)}
+.play-header{display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:rgba(0,0,0,.4);border-bottom:1px solid var(--border);flex-shrink:0}
+.play-back-btn,.play-fullscreen-btn{background:none;border:1px solid var(--border);color:var(--text-muted);font-size:.72rem;padding:4px 10px;border-radius:var(--radius);cursor:pointer;transition:.2s;font-family:inherit}
+.play-back-btn:hover,.play-fullscreen-btn:hover{color:var(--blue-light);border-color:var(--blue-light)}
+.play-game-name{font-size:.85rem;font-weight:600;color:var(--green-price);letter-spacing:.5px}
+.play-iframe{flex:1;width:100%;border:none;background:#000}
+.play-loading{position:absolute;inset:0;background:rgba(0,0,0,.85);display:flex;align-items:center;justify-content:center;z-index:10}
+.play-loading-inner{text-align:center}
+.play-loading-title{font-size:1rem;color:var(--text-white);margin-top:12px;font-weight:500}
+.play-loading-sub{font-size:.72rem;color:var(--text-muted);margin-top:4px}
+.play-loading-model{font-size:.65rem;color:var(--blue-light);margin-top:8px;font-family:monospace}
+.play-btn{background:linear-gradient(to right,#588a1b,#4c6b22);border:none;color:#d2efa9;font-size:.68rem;font-weight:600;padding:4px 10px;border-radius:2px;cursor:pointer;transition:.2s;white-space:nowrap}
+.play-btn:hover{background:linear-gradient(to right,#75b022,#588a1b);color:#fff}
+
 /* LIBRARY/CART LIST */
 .library-list{display:flex;flex-direction:column;gap:4px}
 .library-card{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.2);padding:6px;border-radius:var(--radius);transition:.15s;border:1px solid transparent}
