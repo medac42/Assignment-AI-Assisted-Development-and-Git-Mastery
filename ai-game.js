@@ -42,14 +42,14 @@ async function playGame(idx) {
     'USE REAL ELEMENTS: real character names, enemy names, item names, weapon names from the game. ' +
     'Output ONLY a complete HTML file. No markdown, no explanation, no code fences.';
 
-  // Try models (one call each, with 90s timeout)
+  // Try models (ordered by confirmed success, one call each, 90s timeout)
   var models = [
-    { id: 'nvidia/nemotron-3-super:free', name: 'Nemotron 120B' },
     { id: 'inclusionai/ring-2.6-1t:free', name: 'Ring 1T' },
     { id: 'poolside/laguna-m.1:free', name: 'Laguna M.1' },
     { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B' },
     { id: 'poolside/laguna-xs.2:free', name: 'Laguna XS.2' },
-    { id: 'minimax/minimax-m2.5:free', name: 'MiniMax M2.5' }
+    { id: 'minimax/minimax-m2.5:free', name: 'MiniMax M2.5' },
+    { id: 'nvidia/nemotron-3-super:free', name: 'Nemotron 120B' }
   ];
 
   for (var m = 0; m < models.length; m++) {
