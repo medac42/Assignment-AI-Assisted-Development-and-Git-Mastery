@@ -19,6 +19,7 @@ try {
 
 const OR_KEY = process.env.OPENROUTER_KEY || '';
 const COHERE_KEY = process.env.COHERE_KEY || '';
+const GROQ_KEY = process.env.GROQ_KEY || '';
 
 const MIME = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
@@ -78,6 +79,18 @@ const server = http.createServer((req, res) => {
     req.on('end', () => {
       proxyRequest('openrouter.ai', '/api/v1/chat/completions',
         { 'Authorization': 'Bearer ' + OR_KEY },
+        body, res);
+    });
+    return;
+  }
+
+  // Groq proxy (ultra-fast inference)
+  if (req.url === '/api/groq' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      proxyRequest('api.groq.com', '/openai/v1/chat/completions',
+        { 'Authorization': 'Bearer ' + GROQ_KEY },
         body, res);
     });
     return;

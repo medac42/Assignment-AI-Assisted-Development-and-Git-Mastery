@@ -42,29 +42,45 @@ async function playGame(idx) {
     'USE REAL ELEMENTS: real character names, enemy names, item names, weapon names from the game. ' +
     'Output ONLY a complete HTML file. No markdown, no explanation, no code fences.';
 
-  // Try models (ordered by confirmed success, one call each, 90s timeout)
-  var models = [
-    { id: 'inclusionai/ring-2.6-1t:free', name: 'Ring 1T' },
-    { id: 'poolside/laguna-m.1:free', name: 'Laguna M.1' },
-    { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B' },
-    { id: 'poolside/laguna-xs.2:free', name: 'Laguna XS.2' },
-    { id: 'minimax/minimax-m2.5:free', name: 'MiniMax M2.5' },
-    { id: 'nvidia/nemotron-3-super:free', name: 'Nemotron 120B' }
-  ];
+  // 1. Try Groq first (ultra-fast, 5-10s)
+  updateLoading('Groq (fast)', 'Generating...');
+  try {
+    html = await callGroqWithTimeout(system, prompt, 'llama-3.3-70b-versatile', 30000);
+    if (html && html.length > 500 && html.indexOf('<') >= 0) {
+      console.log('Groq success! (' + html.length + ' chars)');
+    } else {
+      console.warn('Groq: response too short');
+      html = null;
+    }
+  } catch (e) {
+    console.warn('Groq failed:', e.message);
+    html = null;
+  }
 
-  for (var m = 0; m < models.length; m++) {
-    updateLoading(models[m].name, 'Generating...');
-    try {
-      html = await callAIWithTimeout(system, prompt, models[m].id, 90000);
-      if (html && html.length > 500 && html.indexOf('<') >= 0) {
-        console.log(models[m].name + ' success! (' + html.length + ' chars)');
-        break;
+  // 2. Fallback: OpenRouter free models
+  if (!html) {
+    var models = [
+      { id: 'inclusionai/ring-2.6-1t:free', name: 'Ring 1T' },
+      { id: 'poolside/laguna-m.1:free', name: 'Laguna M.1' },
+      { id: 'openai/gpt-oss-120b:free', name: 'GPT-OSS 120B' },
+      { id: 'poolside/laguna-xs.2:free', name: 'Laguna XS.2' },
+      { id: 'minimax/minimax-m2.5:free', name: 'MiniMax M2.5' }
+    ];
+
+    for (var m = 0; m < models.length; m++) {
+      updateLoading(models[m].name, 'Generating...');
+      try {
+        html = await callAIWithTimeout(system, prompt, models[m].id, 90000);
+        if (html && html.length > 500 && html.indexOf('<') >= 0) {
+          console.log(models[m].name + ' success! (' + html.length + ' chars)');
+          break;
+        }
+        console.warn(models[m].name + ': response too short or invalid');
+        html = null;
+      } catch (e) {
+        console.warn(models[m].name + ':', e.message);
+        html = null;
       }
-      console.warn(models[m].name + ': response too short or invalid');
-      html = null;
-    } catch (e) {
-      console.warn(models[m].name + ':', e.message);
-      html = null;
     }
   }
 
@@ -148,6 +164,42 @@ async function callAIWithTimeout(system, prompt, model, timeoutMs) {
 }
 
 
+// Groq call (ultra-fast LPU inference)
+async function callGroqWithTimeout(system, prompt, model, timeoutMs) {
+  var controller = new AbortController();
+  var timer = setTimeout(function() { controller.abort(); }, timeoutMs);
+  try {
+    var res = await fetch('/api/groq', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      body: JSON.stringify({
+        model: model,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: 8000,
+        temperature: 0.7
+      })
+    });
+    clearTimeout(timer);
+    if (!res.ok) {
+      var errText = await res.text();
+      throw new Error(res.status + ': ' + errText.substring(0, 200));
+    }
+    var json = await res.json();
+    if (json.choices && json.choices[0] && json.choices[0].message) {
+      return json.choices[0].message.content;
+    }
+    if (json.error) throw new Error(json.error.message);
+    return '';
+  } catch (e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('Timeout (' + (timeoutMs/1000) + 's)');
+    throw e;
+  }
+}
 
 function cleanHTML(h) {
   h = h.replace(/```html\s*/gi, '').replace(/```\s*/g, '');
