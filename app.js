@@ -1,10 +1,8 @@
 /* ============================================
-   SteamVault — Main Application Logic
-   Uses CheapShark API for real game deals.
-   Simulated purchases saved to localStorage.
+   SteamVault — Steam Clone Application Logic
+   CheapShark API + localStorage persistence
    ============================================ */
 
-// ─── CheapShark API (free, no key needed) ───
 const API_BASE = 'https://www.cheapshark.com/api/1.0';
 
 // ─── Application State ───
@@ -12,19 +10,18 @@ const state = {
   wallet: 250.00,
   cart: [],
   library: [],
-  wishlist: [],        // Wishlist feature (feature-update branch)
-  currentDeals: [],    // Cached deals for sorting
+  wishlist: [],
+  currentDeals: [],
   currentGame: null,
-  searchQuery: '',
+  featuredIndex: 0,
 };
 
-// ─── Initialize App ───
+// ─── Init ───
 document.addEventListener('DOMContentLoaded', () => {
   loadFromStorage();
   loadPopularGames();
   updateUI();
-
-  document.getElementById('search-input').addEventListener('keydown', (e) => {
+  document.getElementById('search-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') searchGames();
   });
 });
@@ -33,488 +30,283 @@ document.addEventListener('DOMContentLoaded', () => {
 //  API Functions
 // ══════════════════════════════════════════════
 
-/**
- * Loads top-rated deals from CheapShark
- */
 async function loadPopularGames() {
   showLoader(true);
   try {
-    const res = await fetch(`${API_BASE}/deals?pageSize=20&sortBy=Deal%20Rating`);
+    const res = await fetch(`${API_BASE}/deals?pageSize=24&sortBy=Deal%20Rating`);
     const data = await res.json();
-    // Deduplicate by game title
     const seen = new Set();
-    const unique = data.filter(d => {
-      if (seen.has(d.title)) return false;
-      seen.add(d.title);
-      return true;
-    });
+    const unique = data.filter(d => { if (seen.has(d.title)) return false; seen.add(d.title); return true; });
     state.currentDeals = unique;
+    renderFeatured(unique.slice(0, 5));
     renderGameGrid(unique);
   } catch (err) {
-    console.error('Error loading games:', err);
-    showToast('Error al cargar juegos.', 'error');
+    console.error('Error:', err);
+    showToast('Error loading games.', 'error');
   }
   showLoader(false);
 }
 
-/**
- * Searches games by title using CheapShark API
- */
 async function searchGames() {
-  const query = document.getElementById('search-input').value.trim();
-  if (!query) {
-    loadPopularGames();
-    document.getElementById('store-title').textContent = '🔥 Ofertas Destacadas';
-    document.getElementById('store-subtitle').textContent = 'Las mejores ofertas ahora mismo';
-    return;
-  }
-
-  state.searchQuery = query;
+  const q = document.getElementById('search-input').value.trim();
+  if (!q) { loadPopularGames(); document.getElementById('store-title').textContent = 'Special Offers'; return; }
   showLoader(true);
   document.getElementById('game-grid').innerHTML = '';
-  document.getElementById('store-title').textContent = `🔍 Resultados: "${query}"`;
-  document.getElementById('store-subtitle').textContent = 'Buscando...';
-
+  document.getElementById('store-title').textContent = `Results for "${q}"`;
+  document.getElementById('featured-section').innerHTML = '';
   try {
-    const res = await fetch(`${API_BASE}/deals?title=${encodeURIComponent(query)}&pageSize=20`);
+    const res = await fetch(`${API_BASE}/deals?title=${encodeURIComponent(q)}&pageSize=24`);
     const data = await res.json();
     const seen = new Set();
-    const unique = data.filter(d => {
-      if (seen.has(d.title)) return false;
-      seen.add(d.title);
-      return true;
-    });
-    document.getElementById('store-subtitle').textContent = `${unique.length} juegos encontrados`;
+    const unique = data.filter(d => { if (seen.has(d.title)) return false; seen.add(d.title); return true; });
     state.currentDeals = unique;
+    document.getElementById('store-subtitle').textContent = `${unique.length} games found`;
     renderGameGrid(unique);
-  } catch (err) {
-    console.error('Search error:', err);
-    showToast('Error en la búsqueda.', 'error');
-  }
+  } catch (err) { showToast('Search error.', 'error'); }
   showLoader(false);
 }
 
-/**
- * Gets the Steam header image for a game
- * @param {Object} deal - CheapShark deal object
- * @returns {string} URL to a large game image
- */
 function getGameImage(deal) {
-  if (deal.steamAppID) {
-    return `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${deal.steamAppID}/header.jpg`;
-  }
-  return deal.thumb || 'https://placehold.co/460x215/1a1a2e/6366f1?text=No+Image';
+  if (deal.steamAppID) return `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${deal.steamAppID}/header.jpg`;
+  return deal.thumb || 'https://placehold.co/460x215/1b2838/67c1f5?text=No+Image';
+}
+
+function getGameCapsule(deal) {
+  if (deal.steamAppID) return `https://shared.fastly.steamstatic.com/store_item_assets/steam/apps/${deal.steamAppID}/capsule_616x353.jpg`;
+  return getGameImage(deal);
 }
 
 // ══════════════════════════════════════════════
-//  Rendering Functions
+//  Rendering
 // ══════════════════════════════════════════════
 
-/**
- * Renders game cards in the store grid
- * @param {Array} deals - CheapShark deal objects
- */
+/** Steam-style featured carousel */
+function renderFeatured(deals) {
+  const section = document.getElementById('featured-section');
+  if (!deals || deals.length === 0) { section.innerHTML = ''; return; }
+  state.featuredIndex = 0;
+
+  function buildCarousel(idx) {
+    const deal = deals[idx];
+    const salePrice = parseFloat(deal.salePrice);
+    const normalPrice = parseFloat(deal.normalPrice);
+    const discount = Math.round(parseFloat(deal.savings));
+    section.innerHTML = `
+      <div class="featured-label">Featured & Recommended</div>
+      <div class="featured-carousel" onclick="openGameModal(state.currentDeals[${state.currentDeals.indexOf(deal)}] || state.currentDeals[0])">
+        <div class="featured-main">
+          <img src="${getGameCapsule(deal)}" alt="${deal.title}"
+               onerror="this.src='${getGameImage(deal)}'">
+        </div>
+        <div class="featured-info">
+          <div>
+            <div class="featured-title">${deal.title}</div>
+            <div class="featured-thumbs">
+              <img src="${getGameImage(deal)}" alt="thumb" onerror="this.style.display='none'">
+              <img src="${deal.thumb}" alt="thumb2" onerror="this.style.display='none'">
+            </div>
+          </div>
+          <div class="featured-bottom">
+            ${discount > 20 ? `<span class="featured-tag">Top Seller</span>` : ''}
+            <div class="featured-price">
+              ${discount > 0 ? `<span style="background:var(--green-price);color:#000;padding:2px 6px;border-radius:2px;font-weight:700;margin-right:6px;">-${discount}%</span>` : ''}
+              ${salePrice === 0 ? '<span style="color:var(--blue-light);">Free to Play</span>' :
+                `<span style="text-decoration:line-through;color:var(--text-muted);font-size:0.8rem;margin-right:4px;">${normalPrice.toFixed(2)}€</span>
+                 <span style="color:var(--green-price);font-weight:600;">${salePrice.toFixed(2)}€</span>`}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="carousel-dots">
+        ${deals.map((_, i) => `<button class="carousel-dot ${i === idx ? 'active' : ''}" onclick="event.stopPropagation();state.featuredIndex=${i};document.getElementById('featured-section').querySelector('.featured-carousel').onclick=null;(${buildCarousel.toString()})(${i})"></button>`).join('')}
+      </div>`;
+  }
+  buildCarousel(0);
+  // Auto-rotate
+  setInterval(() => {
+    state.featuredIndex = (state.featuredIndex + 1) % deals.length;
+    buildCarousel(state.featuredIndex);
+  }, 6000);
+}
+
+/** Game grid cards */
 function renderGameGrid(deals) {
   const grid = document.getElementById('game-grid');
   grid.innerHTML = '';
-
   if (!deals || deals.length === 0) {
-    grid.innerHTML = `
-      <div class="empty-state" style="grid-column:1/-1;">
-        <div class="empty-state-icon">🎮</div>
-        <div class="empty-state-title">No se encontraron juegos</div>
-        <p>Intenta con otro término de búsqueda</p>
-      </div>`;
+    grid.innerHTML = `<div class="empty-state" style="grid-column:1/-1;"><div class="empty-state-icon">🎮</div><div class="empty-state-title">No games found</div><p>Try a different search</p></div>`;
     return;
   }
-
   deals.forEach(deal => {
-    const salePrice = parseFloat(deal.salePrice);
-    const normalPrice = parseFloat(deal.normalPrice);
-    const owned = isOwned(deal.gameID);
-    const discount = Math.round(parseFloat(deal.savings));
+    const sp = parseFloat(deal.salePrice), np = parseFloat(deal.normalPrice);
+    const owned = isOwned(deal.gameID), disc = Math.round(parseFloat(deal.savings));
     const card = document.createElement('div');
     card.className = 'game-card';
     card.onclick = () => openGameModal(deal);
-
     card.innerHTML = `
-      <div class="game-card-img-wrapper">
-        <img class="game-card-img"
-             src="${getGameImage(deal)}"
-             alt="${deal.title}"
-             loading="lazy"
-             onerror="this.src='https://placehold.co/460x215/1a1a2e/6366f1?text=No+Image'">
-        ${discount > 0 ? `<div style="
-          position:absolute; top:8px; right:8px;
-          background:var(--accent-green); color:#fff;
-          padding:2px 8px; border-radius:4px;
-          font-size:0.7rem; font-weight:700; z-index:2;
-        ">-${discount}%</div>` : ''}
+      <div class="game-card-img-wrap">
+        <img class="game-card-img" src="${getGameImage(deal)}" alt="${deal.title}" loading="lazy"
+             onerror="this.src='https://placehold.co/460x215/1b2838/67c1f5?text=No+Image'">
+        ${disc > 0 ? `<div class="game-card-discount">-${disc}%</div>` : ''}
       </div>
       <div class="game-card-body">
         <div class="game-card-title">${deal.title}</div>
         <div class="game-card-meta">
-          <span class="game-card-rating">
-            ${deal.steamRatingText ? `⭐ ${deal.steamRatingPercent}%` : '⭐ N/A'}
-          </span>
-          <span class="game-card-price ${salePrice === 0 ? 'free' : ''}">
-            ${owned ? '✅ Biblioteca' : (salePrice === 0 ? 'GRATIS' : salePrice.toFixed(2) + '€')}
-          </span>
+          <span class="game-card-rating">${deal.steamRatingText ? `⭐ ${deal.steamRatingPercent}%` : ''}</span>
+          ${owned ? `<span class="game-card-owned">✓ In Library</span>` :
+            `<div class="game-card-prices">
+              ${np > sp && sp > 0 ? `<span class="game-card-original">${np.toFixed(2)}€</span>` : ''}
+              <span class="game-card-sale ${sp === 0 ? 'free' : ''}">${sp === 0 ? 'Free' : sp.toFixed(2) + '€'}</span>
+            </div>`}
         </div>
-        ${normalPrice > salePrice && salePrice > 0 ? `
-          <div style="font-size:0.7rem; color:var(--text-muted); text-decoration:line-through; text-align:right;">
-            ${normalPrice.toFixed(2)}€
-          </div>` : ''}
       </div>`;
-
     grid.appendChild(card);
   });
 }
 
-/**
- * Opens the game detail modal with deal data
- * @param {Object} deal - CheapShark deal object
- */
+/** Game detail modal */
 function openGameModal(deal) {
-  const overlay = document.getElementById('modal-overlay');
-  overlay.classList.add('visible');
+  document.getElementById('modal-overlay').classList.add('visible');
   state.currentGame = deal;
+  const sp = parseFloat(deal.salePrice), np = parseFloat(deal.normalPrice);
+  const owned = isOwned(deal.gameID), inCart = state.cart.some(g => g.gameID === deal.gameID);
+  const disc = Math.round(parseFloat(deal.savings));
+  const inWish = state.wishlist.some(g => g.gameID === deal.gameID);
+  const release = deal.releaseDate > 0 ? new Date(deal.releaseDate * 1000).toLocaleDateString('es-ES') : '—';
+  const ratingClass = !deal.steamRatingText ? 'neutral' :
+    deal.steamRatingText.includes('Positive') ? 'positive' :
+    deal.steamRatingText.includes('Mixed') ? 'mixed' : 'negative';
 
-  const salePrice = parseFloat(deal.salePrice);
-  const normalPrice = parseFloat(deal.normalPrice);
-  const owned = isOwned(deal.gameID);
-  const inCart = state.cart.some(g => g.gameID === deal.gameID);
-  const discount = Math.round(parseFloat(deal.savings));
-  const releaseDate = deal.releaseDate && deal.releaseDate > 0
-    ? new Date(deal.releaseDate * 1000).toLocaleDateString('es-ES')
-    : 'Desconocido';
-
-  document.getElementById('modal-hero').src = getGameImage(deal);
-  document.getElementById('modal-hero').onerror = function() {
-    this.src = 'https://placehold.co/800x340/1a1a2e/6366f1?text=' + encodeURIComponent(deal.title);
-  };
+  document.getElementById('modal-hero').src = getGameCapsule(deal);
+  document.getElementById('modal-hero').onerror = function(){ this.src = getGameImage(deal); };
   document.getElementById('modal-title').textContent = deal.title;
-
-  // Rating stars
-  const ratingPct = parseInt(deal.steamRatingPercent) || 0;
-  const starCount = Math.round(ratingPct / 20);
-  document.getElementById('modal-stars').textContent = '⭐'.repeat(starCount) + '☆'.repeat(5 - starCount);
-  document.getElementById('modal-rating-text').textContent =
-    deal.steamRatingText ? `${deal.steamRatingText} (${ratingPct}%)  •  ${deal.steamRatingCount || 0} reviews` : 'Sin valoraciones';
-
-  // Genres placeholder
-  document.getElementById('modal-genres').innerHTML =
-    deal.steamRatingText ? `<span class="genre-tag">${deal.steamRatingText}</span>` : '';
-
-  // Description
+  document.getElementById('modal-rating-tag').textContent = deal.steamRatingText || 'No Reviews';
+  document.getElementById('modal-rating-tag').className = `modal-rating-tag ${ratingClass}`;
+  document.getElementById('modal-rating-count').textContent = deal.steamRatingCount ? `(${parseInt(deal.steamRatingCount).toLocaleString()} reviews)` : '';
   document.getElementById('modal-desc').textContent =
-    `Consigue ${deal.title} a un precio increíble. ` +
-    (discount > 0 ? `¡Ahorra un ${discount}% sobre el precio original de ${normalPrice.toFixed(2)}€!` : '') +
-    (deal.metacriticScore > 0 ? ` Puntuación Metacritic: ${deal.metacriticScore}/100.` : '');
+    `Get ${deal.title} at an incredible price. ` +
+    (disc > 0 ? `Save ${disc}% off the original ${np.toFixed(2)}€! ` : '') +
+    (deal.metacriticScore > 0 ? `Metacritic: ${deal.metacriticScore}/100.` : '');
 
-  // Info grid
-  document.getElementById('modal-info-grid').innerHTML = `
-    <div class="modal-info-item">
-      <div class="modal-info-label">Lanzamiento</div>
-      <div class="modal-info-value">${releaseDate}</div>
-    </div>
-    <div class="modal-info-item">
-      <div class="modal-info-label">Metacritic</div>
-      <div class="modal-info-value">${deal.metacriticScore || '—'}</div>
-    </div>
-    <div class="modal-info-item">
-      <div class="modal-info-label">Descuento</div>
-      <div class="modal-info-value" style="color:var(--accent-green);">${discount > 0 ? `-${discount}%` : 'Sin descuento'}</div>
-    </div>
-    <div class="modal-info-item">
-      <div class="modal-info-label">Precio Original</div>
-      <div class="modal-info-value">${normalPrice.toFixed(2)}€</div>
-    </div>`;
+  // Screenshots
+  document.getElementById('modal-screenshots').innerHTML = `
+    <img src="${getGameImage(deal)}" alt="screenshot" onerror="this.style.display='none'">
+    <img src="${deal.thumb}" alt="screenshot2" onerror="this.style.display='none'">`;
 
-  // Price & Buy button
-  document.getElementById('modal-price').textContent =
-    salePrice === 0 ? 'GRATIS' : `${salePrice.toFixed(2)}€`;
+  // Purchase box
+  document.getElementById('purchase-title').textContent = `Buy ${deal.title}`;
+  const discBadge = document.getElementById('modal-discount');
+  if (disc > 0) { discBadge.textContent = `-${disc}%`; discBadge.style.display = 'inline'; }
+  else { discBadge.style.display = 'none'; }
+  document.getElementById('modal-price-original').textContent = np > sp ? np.toFixed(2) + '€' : '';
+  document.getElementById('modal-price-final').textContent = sp === 0 ? 'Free to Play' : sp.toFixed(2) + '€';
 
   const buyBtn = document.getElementById('modal-buy-btn');
-  if (owned) {
-    buyBtn.textContent = '✅ Ya en tu biblioteca';
-    buyBtn.className = 'btn-buy owned';
-  } else if (inCart) {
-    buyBtn.textContent = '🛒 Ya en el carrito';
-    buyBtn.className = 'btn-buy owned';
-  } else {
-    buyBtn.textContent = '🛒 Añadir al Carrito';
-    buyBtn.className = 'btn-buy';
-  }
+  if (owned) { buyBtn.textContent = '✓ In Library'; buyBtn.className = 'btn-add-cart owned'; }
+  else if (inCart) { buyBtn.textContent = '✓ In Cart'; buyBtn.className = 'btn-add-cart owned'; }
+  else { buyBtn.textContent = 'Add to Cart'; buyBtn.className = 'btn-add-cart'; }
+
+  document.getElementById('modal-wish-btn').textContent = inWish ? '💜' : '🤍';
+
+  // Info panel
+  document.getElementById('modal-info-panel').innerHTML = `
+    <div class="info-item"><div class="info-label">Release Date</div><div class="info-value">${release}</div></div>
+    <div class="info-item"><div class="info-label">Metacritic</div><div class="info-value">${deal.metacriticScore || '—'}</div></div>
+    <div class="info-item"><div class="info-label">Discount</div><div class="info-value" style="color:var(--green-price);">${disc > 0 ? `-${disc}%` : 'None'}</div></div>
+    <div class="info-item"><div class="info-label">Original Price</div><div class="info-value">${np.toFixed(2)}€</div></div>
+    <div class="info-item"><div class="info-label">Steam Rating</div><div class="info-value">${deal.steamRatingText || '—'}</div></div>
+    <div class="info-item"><div class="info-label">Reviews</div><div class="info-value">${deal.steamRatingCount ? parseInt(deal.steamRatingCount).toLocaleString() : '—'}</div></div>`;
 }
 
-/**
- * Renders the library page with owned games
- */
 function renderLibrary() {
   const list = document.getElementById('library-list');
-  const subtitle = document.getElementById('library-subtitle');
-  subtitle.textContent = `${state.library.length} juegos`;
-
-  if (state.library.length === 0) {
-    list.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">📚</div>
-        <div class="empty-state-title">Tu biblioteca está vacía</div>
-        <p>¡Explora la tienda y consigue tus primeros juegos!</p>
-      </div>`;
-    return;
-  }
-
-  list.innerHTML = state.library.map(game => `
-    <div class="library-card">
-      <img class="library-card-img" src="${game.image}" alt="${game.name}" loading="lazy"
-           onerror="this.src='https://placehold.co/140x80/1a1a2e/6366f1?text=No+Img'">
-      <div class="library-card-info">
-        <div class="library-card-title">${game.name}</div>
-        <div class="library-card-date">Comprado: ${game.purchaseDate} — ${game.price === 0 ? 'Gratis' : game.price.toFixed(2) + '€'}</div>
-      </div>
-    </div>
-  `).join('');
+  document.getElementById('library-subtitle').textContent = `${state.library.length} games`;
+  if (!state.library.length) { list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📚</div><div class="empty-state-title">Your library is empty</div><p>Buy games from the store!</p></div>`; return; }
+  list.innerHTML = state.library.map(g => `
+    <div class="library-card"><img class="library-card-img" src="${g.image}" alt="${g.name}" loading="lazy" onerror="this.src='https://placehold.co/120x56/1b2838/67c1f5?text=-'">
+    <div class="library-card-info"><div class="library-card-title">${g.name}</div><div class="library-card-date">Purchased: ${g.purchaseDate} — ${g.price === 0 ? 'Free' : g.price.toFixed(2) + '€'}</div></div></div>`).join('');
 }
 
-/**
- * Renders the shopping cart page
- */
-function renderCart() {
-  const list = document.getElementById('cart-list');
-  const subtitle = document.getElementById('cart-subtitle');
-  const summary = document.getElementById('cart-summary');
-  subtitle.textContent = `${state.cart.length} artículos`;
-
-  if (state.cart.length === 0) {
-    list.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">🛒</div>
-        <div class="empty-state-title">Tu carrito está vacío</div>
-        <p>Busca juegos y añádelos al carrito</p>
-      </div>`;
-    summary.style.display = 'none';
-    return;
-  }
-
-  const total = state.cart.reduce((s, g) => s + g.price, 0);
-  document.getElementById('cart-total').textContent = `${total.toFixed(2)}€`;
-  summary.style.display = 'block';
-
-  const purchaseBtn = document.getElementById('btn-purchase-cart');
-  if (total > state.wallet) {
-    purchaseBtn.textContent = '❌ Saldo insuficiente';
-    purchaseBtn.style.opacity = '0.5';
-    purchaseBtn.style.pointerEvents = 'none';
-  } else {
-    purchaseBtn.textContent = '💳 Comprar Todo';
-    purchaseBtn.style.opacity = '1';
-    purchaseBtn.style.pointerEvents = 'auto';
-  }
-
-  list.innerHTML = state.cart.map((game, i) => `
-    <div class="library-card">
-      <img class="library-card-img" src="${game.image}" alt="${game.name}" loading="lazy"
-           onerror="this.src='https://placehold.co/140x80/1a1a2e/6366f1?text=No+Img'">
-      <div class="library-card-info">
-        <div class="library-card-title">${game.name}</div>
-        <div class="library-card-date" style="color:var(--accent-green);font-weight:600;">
-          ${game.price === 0 ? 'GRATIS' : game.price.toFixed(2) + '€'}
-        </div>
-      </div>
-      <button onclick="removeFromCart(${i})" style="
-        background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);
-        color:var(--accent-red);padding:0.5rem 0.8rem;border-radius:var(--radius-sm);
-        cursor:pointer;font-size:0.8rem;align-self:center;
-      ">🗑️ Quitar</button>
-    </div>
-  `).join('');
-}
-
-// ══════════════════════════════════════════════
-//  Commerce Functions
-// ══════════════════════════════════════════════
-
-/** Adds the current modal game to the cart */
-function buyFromModal() {
-  const deal = state.currentGame;
-  if (!deal) return;
-
-  if (isOwned(deal.gameID)) {
-    showToast('Ya tienes este juego.', 'error');
-    return;
-  }
-  if (state.cart.some(g => g.gameID === deal.gameID)) {
-    showToast('Ya está en tu carrito.', 'error');
-    return;
-  }
-
-  const price = parseFloat(deal.salePrice);
-  state.cart.push({
-    gameID: deal.gameID,
-    name: deal.title,
-    image: getGameImage(deal),
-    price: price,
-  });
-
-  showToast(`"${deal.title}" añadido al carrito.`, 'success');
-  updateUI();
-  closeModalForce();
-}
-
-/** Removes a game from the cart */
-function removeFromCart(index) {
-  const removed = state.cart.splice(index, 1);
-  showToast(`"${removed[0].name}" eliminado.`, 'success');
-  updateUI();
-  renderCart();
-}
-
-/** Purchases all games in the cart */
-function purchaseCart() {
-  const total = state.cart.reduce((s, g) => s + g.price, 0);
-  if (total > state.wallet) {
-    showToast('Saldo insuficiente.', 'error');
-    return;
-  }
-
-  state.wallet -= total;
-  state.wallet = Math.round(state.wallet * 100) / 100;
-
-  const today = new Date().toLocaleDateString('es-ES');
-  state.cart.forEach(game => {
-    if (!isOwned(game.gameID)) {
-      state.library.push({
-        gameID: game.gameID,
-        name: game.name,
-        image: game.image,
-        price: game.price,
-        purchaseDate: today,
-      });
-    }
-  });
-
-  const count = state.cart.length;
-  state.cart = [];
-  saveToStorage();
-  updateUI();
-  renderCart();
-  showToast(`¡${count} juego(s) comprado(s)! -${total.toFixed(2)}€`, 'success');
-}
-
-// ══════════════════════════════════════════════
-//  Wishlist Functions (feature-update)
-// ══════════════════════════════════════════════
-
-/** Toggles the current game in/out of the wishlist */
-function toggleWishlist() {
-  const deal = state.currentGame;
-  if (!deal) return;
-
-  const idx = state.wishlist.findIndex(g => g.gameID === deal.gameID);
-  if (idx !== -1) {
-    state.wishlist.splice(idx, 1);
-    showToast(`"${deal.title}" eliminado de la wishlist.`, 'success');
-  } else {
-    state.wishlist.push({
-      gameID: deal.gameID,
-      name: deal.title,
-      image: getGameImage(deal),
-      price: parseFloat(deal.salePrice),
-      normalPrice: parseFloat(deal.normalPrice),
-      addedDate: new Date().toLocaleDateString('es-ES'),
-    });
-    showToast(`"${deal.title}" añadido a la wishlist! 💜`, 'success');
-  }
-  saveToStorage();
-  updateUI();
-  closeModalForce();
-}
-
-/** Renders the wishlist page */
 function renderWishlist() {
   const list = document.getElementById('wishlist-list');
-  const subtitle = document.getElementById('wishlist-subtitle');
-  subtitle.textContent = `${state.wishlist.length} juegos`;
-
-  if (state.wishlist.length === 0) {
-    list.innerHTML = `
-      <div class="empty-state">
-        <div class="empty-state-icon">💜</div>
-        <div class="empty-state-title">Tu wishlist está vacía</div>
-        <p>Marca juegos con el 💜 para guardarlos aquí</p>
-      </div>`;
-    return;
-  }
-
-  list.innerHTML = state.wishlist.map((game, i) => `
-    <div class="library-card">
-      <img class="library-card-img" src="${game.image}" alt="${game.name}" loading="lazy"
-           onerror="this.src='https://placehold.co/140x80/1a1a2e/6366f1?text=No+Img'">
-      <div class="library-card-info">
-        <div class="library-card-title">${game.name}</div>
-        <div class="library-card-date">Añadido: ${game.addedDate} — ${game.price === 0 ? 'Gratis' : game.price.toFixed(2) + '€'}</div>
-      </div>
-      <button onclick="removeFromWishlist(${i})" style="
-        background:rgba(168,85,247,0.1);border:1px solid rgba(168,85,247,0.2);
-        color:#a855f7;padding:0.5rem 0.8rem;border-radius:var(--radius-sm);
-        cursor:pointer;font-size:0.8rem;align-self:center;
-      ">💔 Quitar</button>
-    </div>
-  `).join('');
+  document.getElementById('wishlist-subtitle').textContent = `${state.wishlist.length} games`;
+  if (!state.wishlist.length) { list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🤍</div><div class="empty-state-title">Your wishlist is empty</div><p>Mark games with 🤍 to save them</p></div>`; return; }
+  list.innerHTML = state.wishlist.map((g, i) => `
+    <div class="library-card"><img class="library-card-img" src="${g.image}" alt="${g.name}" loading="lazy" onerror="this.src='https://placehold.co/120x56/1b2838/67c1f5?text=-'">
+    <div class="library-card-info"><div class="library-card-title">${g.name}</div><div class="library-card-date">Added: ${g.addedDate} — ${g.price === 0 ? 'Free' : g.price.toFixed(2) + '€'}</div></div>
+    <button class="library-card-btn wish-remove" onclick="removeFromWishlist(${i})">✕ Remove</button></div>`).join('');
 }
 
-/** Removes a game from the wishlist */
-function removeFromWishlist(index) {
-  const removed = state.wishlist.splice(index, 1);
-  showToast(`"${removed[0].name}" eliminado de la wishlist.`, 'success');
-  saveToStorage();
-  updateUI();
-  renderWishlist();
+function renderCart() {
+  const list = document.getElementById('cart-list');
+  const summary = document.getElementById('cart-summary');
+  document.getElementById('cart-subtitle').textContent = `${state.cart.length} items`;
+  if (!state.cart.length) { list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">🛒</div><div class="empty-state-title">Your cart is empty</div><p>Browse the store and add games</p></div>`; summary.style.display = 'none'; return; }
+  const total = state.cart.reduce((s, g) => s + g.price, 0);
+  document.getElementById('cart-total').textContent = total.toFixed(2) + '€';
+  summary.style.display = 'flex';
+  const btn = document.getElementById('btn-purchase-cart');
+  btn.className = total > state.wallet ? 'btn-purchase disabled' : 'btn-purchase';
+  btn.textContent = total > state.wallet ? 'Insufficient funds' : 'Purchase for myself';
+  list.innerHTML = state.cart.map((g, i) => `
+    <div class="library-card"><img class="library-card-img" src="${g.image}" alt="${g.name}" loading="lazy" onerror="this.src='https://placehold.co/120x56/1b2838/67c1f5?text=-'">
+    <div class="library-card-info"><div class="library-card-title">${g.name}</div><div class="library-card-date" style="color:var(--green-price);font-weight:600;">${g.price === 0 ? 'Free' : g.price.toFixed(2) + '€'}</div></div>
+    <button class="library-card-btn" onclick="removeFromCart(${i})">✕ Remove</button></div>`).join('');
 }
 
 // ══════════════════════════════════════════════
-//  Sorting Functions (feature-update)
+//  Commerce
 // ══════════════════════════════════════════════
 
-/** Sorts the currently displayed deals by the selected criteria */
+function buyFromModal() {
+  const d = state.currentGame; if (!d) return;
+  if (isOwned(d.gameID)) { showToast('Already in library.', 'error'); return; }
+  if (state.cart.some(g => g.gameID === d.gameID)) { showToast('Already in cart.', 'error'); return; }
+  state.cart.push({ gameID: d.gameID, name: d.title, image: getGameImage(d), price: parseFloat(d.salePrice) });
+  showToast(`"${d.title}" added to cart.`, 'success'); updateUI(); closeModalForce();
+}
+
+function removeFromCart(i) { const r = state.cart.splice(i, 1); showToast(`"${r[0].name}" removed.`, 'success'); updateUI(); renderCart(); }
+
+function purchaseCart() {
+  const total = state.cart.reduce((s, g) => s + g.price, 0);
+  if (total > state.wallet) { showToast('Insufficient funds.', 'error'); return; }
+  state.wallet -= total; state.wallet = Math.round(state.wallet * 100) / 100;
+  const today = new Date().toLocaleDateString('es-ES');
+  state.cart.forEach(g => { if (!isOwned(g.gameID)) state.library.push({ gameID: g.gameID, name: g.name, image: g.image, price: g.price, purchaseDate: today }); });
+  const c = state.cart.length; state.cart = [];
+  saveToStorage(); updateUI(); renderCart();
+  showToast(`${c} game(s) purchased! -${total.toFixed(2)}€`, 'success');
+}
+
+function toggleWishlist() {
+  const d = state.currentGame; if (!d) return;
+  const idx = state.wishlist.findIndex(g => g.gameID === d.gameID);
+  if (idx !== -1) { state.wishlist.splice(idx, 1); showToast(`Removed from wishlist.`, 'success'); }
+  else { state.wishlist.push({ gameID: d.gameID, name: d.title, image: getGameImage(d), price: parseFloat(d.salePrice), normalPrice: parseFloat(d.normalPrice), addedDate: new Date().toLocaleDateString('es-ES') }); showToast(`Added to wishlist! 💜`, 'success'); }
+  saveToStorage(); updateUI(); closeModalForce();
+}
+
+function removeFromWishlist(i) { const r = state.wishlist.splice(i, 1); showToast(`"${r[0].name}" removed.`, 'success'); saveToStorage(); updateUI(); renderWishlist(); }
+
 function sortGames() {
-  const sortBy = document.getElementById('sort-select').value;
-  const deals = [...state.currentDeals];
-
-  switch (sortBy) {
-    case 'price':
-      deals.sort((a, b) => parseFloat(a.salePrice) - parseFloat(b.salePrice));
-      break;
-    case 'title':
-      deals.sort((a, b) => a.title.localeCompare(b.title));
-      break;
-    case 'metacritic':
-      deals.sort((a, b) => (parseInt(b.metacriticScore) || 0) - (parseInt(a.metacriticScore) || 0));
-      break;
-    case 'deal':
-    default:
-      deals.sort((a, b) => parseFloat(b.dealRating || 0) - parseFloat(a.dealRating || 0));
-      break;
-  }
-
-  renderGameGrid(deals);
+  const s = document.getElementById('sort-select').value, d = [...state.currentDeals];
+  if (s === 'price') d.sort((a, b) => parseFloat(a.salePrice) - parseFloat(b.salePrice));
+  else if (s === 'title') d.sort((a, b) => a.title.localeCompare(b.title));
+  else if (s === 'metacritic') d.sort((a, b) => (parseInt(b.metacriticScore) || 0) - (parseInt(a.metacriticScore) || 0));
+  else d.sort((a, b) => parseFloat(b.dealRating || 0) - parseFloat(a.dealRating || 0));
+  renderGameGrid(d);
 }
 
 // ══════════════════════════════════════════════
-//  Utility Functions
+//  Utility
 // ══════════════════════════════════════════════
 
-/** Checks if a game is owned */
-function isOwned(gameID) {
-  return state.library.some(g => g.gameID === gameID);
-}
+function isOwned(id) { return state.library.some(g => g.gameID === id); }
 
-/** Switches between pages */
 function showPage(page) {
   document.querySelectorAll('.page-view').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(b => b.classList.remove('active'));
   document.getElementById(`page-${page}`).classList.add('active');
   document.getElementById(`nav-${page}`).classList.add('active');
   if (page === 'library') renderLibrary();
@@ -522,66 +314,37 @@ function showPage(page) {
   if (page === 'cart') renderCart();
 }
 
-/** Updates UI badges and wallet */
 function updateUI() {
-  const cartBadge = document.getElementById('cart-count');
-  cartBadge.textContent = state.cart.length;
-  cartBadge.classList.toggle('visible', state.cart.length > 0);
-
-  const libBadge = document.getElementById('library-count');
-  libBadge.textContent = state.library.length;
-  libBadge.classList.toggle('visible', state.library.length > 0);
-
-  const wishBadge = document.getElementById('wishlist-count');
-  wishBadge.textContent = state.wishlist.length;
-  wishBadge.classList.toggle('visible', state.wishlist.length > 0);
-
+  const cb = document.getElementById('cart-count'); cb.textContent = state.cart.length; cb.classList.toggle('visible', state.cart.length > 0);
+  const lb = document.getElementById('library-count'); lb.textContent = state.library.length; lb.classList.toggle('visible', state.library.length > 0);
+  const wb = document.getElementById('wishlist-count'); wb.textContent = state.wishlist.length; wb.classList.toggle('visible', state.wishlist.length > 0);
   document.getElementById('wallet-amount').textContent = state.wallet.toFixed(2);
 }
 
-/** Toggles loader visibility */
-function showLoader(show) {
-  document.getElementById('store-loader').style.display = show ? 'flex' : 'none';
+function showLoader(s) { document.getElementById('store-loader').style.display = s ? 'flex' : 'none'; }
+
+function showToast(msg, type = 'success') {
+  const c = document.getElementById('toast-container'), t = document.createElement('div');
+  t.className = `toast ${type}`; t.innerHTML = `<span>${type === 'success' ? '✅' : '❌'}</span> ${msg}`;
+  c.appendChild(t); setTimeout(() => t.remove(), 3000);
 }
 
-/** Shows a toast notification */
-function showToast(message, type = 'success') {
-  const container = document.getElementById('toast-container');
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  toast.innerHTML = `<span>${type === 'success' ? '✅' : '❌'}</span> ${message}`;
-  container.appendChild(toast);
-  setTimeout(() => toast.remove(), 3000);
-}
-
-/** Closes modal on backdrop click */
-function closeModal(e) {
-  if (e.target === document.getElementById('modal-overlay')) closeModalForce();
-}
-
-/** Force closes the modal */
-function closeModalForce() {
-  document.getElementById('modal-overlay').classList.remove('visible');
-  state.currentGame = null;
-}
+function closeModal(e) { if (e.target === document.getElementById('modal-overlay')) closeModalForce(); }
+function closeModalForce() { document.getElementById('modal-overlay').classList.remove('visible'); state.currentGame = null; }
 
 // ══════════════════════════════════════════════
-//  LocalStorage Persistence
+//  Persistence
 // ══════════════════════════════════════════════
 
-/** Saves library, wallet & wishlist to localStorage */
 function saveToStorage() {
-  localStorage.setItem('steamvault_library', JSON.stringify(state.library));
-  localStorage.setItem('steamvault_wallet', JSON.stringify(state.wallet));
-  localStorage.setItem('steamvault_wishlist', JSON.stringify(state.wishlist));
+  localStorage.setItem('sv_lib', JSON.stringify(state.library));
+  localStorage.setItem('sv_wallet', JSON.stringify(state.wallet));
+  localStorage.setItem('sv_wish', JSON.stringify(state.wishlist));
 }
 
-/** Loads library, wallet & wishlist from localStorage */
 function loadFromStorage() {
-  const lib = localStorage.getItem('steamvault_library');
-  const wallet = localStorage.getItem('steamvault_wallet');
-  const wish = localStorage.getItem('steamvault_wishlist');
-  if (lib) state.library = JSON.parse(lib);
-  if (wallet) state.wallet = JSON.parse(wallet);
-  if (wish) state.wishlist = JSON.parse(wish);
+  const l = localStorage.getItem('sv_lib'), w = localStorage.getItem('sv_wallet'), ws = localStorage.getItem('sv_wish');
+  if (l) state.library = JSON.parse(l);
+  if (w) state.wallet = JSON.parse(w);
+  if (ws) state.wishlist = JSON.parse(ws);
 }
