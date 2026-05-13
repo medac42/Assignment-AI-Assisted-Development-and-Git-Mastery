@@ -24,9 +24,10 @@ async function playGame(idx) {
 
   // Try OpenRouter models (best to worst) with multi-step generation
   var models = [
-    { id: 'google/gemini-2.0-flash-lite-preview-02-05:free', name: 'Gemini Flash' },
-    { id: 'meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 70B' },
-    { id: 'mistralai/mistral-small-24b-instruct-2501:free', name: 'Mistral 24B' }
+    { id: 'google/gemma-4-31b:free', name: 'Gemma 4 31B' },
+    { id: 'deepseek-ai/deepseek-r1:free', name: 'DeepSeek R1' },
+    { id: 'meta-llama/llama-3.2-3b-instruct:free', name: 'Llama 3.2' },
+    { id: 'openrouter/free', name: 'Auto Free' }
   ];
 
   for (var m = 0; m < models.length; m++) {
@@ -151,7 +152,7 @@ function buildFullPrompt(name, gameInfo) {
 
 // ── AI call via OpenRouter proxy (multi-step capable) ──
 async function callAI(system, messages, model) {
-  model = model || 'google/gemini-2.0-flash-lite-preview-02-05:free';
+  model = model || 'openrouter/free';
   var body = {
     model: model,
     messages: [{ role: 'system', content: system }].concat(messages),
