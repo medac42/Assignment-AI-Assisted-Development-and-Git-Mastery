@@ -51,54 +51,58 @@ async function playGame(idx) {
 // ── Multi-step game generation with Cohere ──
 async function generateGameMultiStep(name) {
   var messages = [];
-  var system = 'You are an expert HTML5 game developer. You write self-contained HTML files with embedded CSS and JS. Output ONLY code, no markdown fences, no explanation. When asked to update code, output the COMPLETE updated HTML file.';
+  var system = 'You are an expert HTML5 game developer who knows every Steam game. ' +
+    'You create 2D canvas mini-games that match the GENRE and THEME of real games. ' +
+    'A puzzle game gets a puzzle. A racing game gets racing. A platformer gets platforming. An RPG gets RPG mechanics. ' +
+    'You write self-contained HTML files with embedded CSS and JS. Output ONLY code, no markdown fences, no explanation. ' +
+    'When asked to update code, output the COMPLETE updated HTML file.';
 
-  // Step 1: Base game with canvas + player
-  updateLoading('Step 1/3', 'Creating player & world...');
+  // Step 1: AI decides game type based on the real game
+  updateLoading('Step 1/3', 'Designing game concept...');
   messages.push({
     role: 'user',
-    content: 'Create a complete HTML file for a 2D canvas game inspired by "' + name + '". ' +
-      'The canvas fills the viewport. The player is a colored triangle that rotates toward the mouse. ' +
-      'WASD moves the player. Clicking shoots a projectile toward the mouse. ' +
-      'Add a scrolling starfield background. Use colors that match the theme of "' + name + '". ' +
-      'Start with <!DOCTYPE html>. Make the player movement smooth with camera follow.'
+    content: 'Create a complete HTML file for a 2D canvas mini-game inspired by the Steam game "' + name + '". ' +
+      'IMPORTANT: Think about what "' + name + '" actually is. If it is a puzzle game, make a puzzle. ' +
+      'If it is a racing game, make a racing game. If it is a platformer, make a platformer. ' +
+      'If it is a strategy game, make a simplified strategy game. If it is a sports game, make a sports game. ' +
+      'Match the GENRE and THEME of the real game as closely as possible. ' +
+      'Canvas fills the viewport. Use keyboard controls appropriate to the genre. ' +
+      'Use a color palette that matches "' + name + '". ' +
+      'Start with <!DOCTYPE html>. Make it fun and playable immediately.'
   });
 
   var step1 = await callCohere(system, messages);
   if (!step1 || step1.length < 200) return null;
   messages.push({ role: 'assistant', content: step1 });
 
-  // Step 2: Add enemies, collisions, scoring
-  updateLoading('Step 2/3', 'Adding enemies & combat...');
+  // Step 2: Add depth, challenge, scoring
+  updateLoading('Step 2/3', 'Adding challenge & depth...');
   messages.push({
     role: 'user',
     content: 'Update the game. Add these features to the EXISTING code:\n' +
-      '1. Three enemy types: small fast ones (triangles), medium ones (circles), big slow tanks (squares)\n' +
-      '2. Enemies spawn off-screen every few seconds and chase the player\n' +
-      '3. Bullets kill enemies (show particle explosions on death)\n' +
-      '4. Enemies damage the player on contact (player has 100 HP)\n' +
-      '5. Score increases when enemies are killed (10/15/25 points by type)\n' +
-      '6. Enemies have HP bars above them\n' +
-      '7. Dead enemies sometimes drop health pickups (green) or special charge (blue)\n' +
+      '1. Progressive difficulty: the game gets harder over time or levels\n' +
+      '2. A scoring system that fits the game genre\n' +
+      '3. Visual feedback: particle effects, screen shake, animations on key events\n' +
+      '4. At least 3 different types of challenges/obstacles/enemies appropriate to the genre\n' +
+      '5. Collectibles or power-ups that make sense for the game\n' +
+      '6. Sound effects using Web Audio API (short beeps/tones)\n' +
       'Output the COMPLETE updated HTML file.'
   });
 
   var step2 = await callCohere(system, messages);
-  if (!step2 || step2.length < 500) return step1; // fallback to step1
+  if (!step2 || step2.length < 500) return step1;
   messages.push({ role: 'assistant', content: step2 });
 
-  // Step 3: HUD, title screen, game over, polish
-  updateLoading('Step 3/3', 'Adding UI & polish...');
+  // Step 3: Title screen, HUD, game over, polish
+  updateLoading('Step 3/3', 'Polishing UI...');
   messages.push({
     role: 'user',
     content: 'Final update. Add these to the EXISTING code:\n' +
-      '1. Title screen: show "' + name + '" in large text + "Press ENTER to start" (game starts paused)\n' +
-      '2. HUD overlay: HP bar (top-left), score display, wave counter, special ability bar\n' +
-      '3. Space bar triggers special attack (ring of 16 bullets) when special bar is full\n' +
-      '4. Wave system: after killing enough enemies, wave increases, enemies get stronger\n' +
-      '5. Game Over screen when HP reaches 0: show final score + "Press ENTER to restart"\n' +
-      '6. Mini-map in top-right corner showing enemy positions as dots\n' +
-      '7. Particle effects on all impacts\n' +
+      '1. Title screen: show "' + name + '" in stylized large text with the game\'s theme colors, plus "Press ENTER to start"\n' +
+      '2. HUD overlay showing score, level/wave, and any relevant stats for this genre\n' +
+      '3. Game Over screen when the player loses: show final score + "Press ENTER to restart"\n' +
+      '4. Smooth transitions between screens\n' +
+      '5. A brief instructions text on the title screen showing the controls\n' +
       'Output the COMPLETE final HTML file.'
   });
 
@@ -112,11 +116,11 @@ function updateLoading(model, sub) {
 }
 
 function buildFullPrompt(name) {
-  return 'Create a complete HTML file with a canvas game inspired by "' + name + '". ' +
-    'Canvas fills the page. WASD to move, click to shoot, Space for special ability. ' +
-    'Show HP bar and score. Title screen says "' + name + ' - Press ENTER". ' +
-    'Enemies spawn and chase player. Score goes up when killed. Game over on 0 HP. ' +
-    'Use themed colors. Multiple enemy types. Particles on impacts. ' +
+  return 'Create a complete HTML file with a 2D canvas mini-game inspired by the Steam game "' + name + '". ' +
+    'IMPORTANT: Match the actual GENRE of "' + name + '". If it is a puzzle, make a puzzle. Racing = racing. RPG = RPG. Platformer = platformer. ' +
+    'Canvas fills the page. Use controls appropriate to the genre. ' +
+    'Include a title screen with "' + name + ' - Press ENTER", score system, and game over screen. ' +
+    'Progressive difficulty. Themed colors matching the real game. ' +
     'Use only HTML+CSS+JS in one file. Start with <!DOCTYPE html>. No markdown.';
 }
 
